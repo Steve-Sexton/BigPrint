@@ -1,0 +1,36 @@
+# Stray lockfiles (app lockfile lives in bigprint-app/)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# OS artifacts
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Editor directories
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Logs
+*.log
+
+# Environment variables (never commit secrets)
+.env
+.env.*
+!.env.example
+
+# Product planning docs (keep in Notion / private wiki)
+MVP-Blueprint.md
+PRD.md
+Research.md

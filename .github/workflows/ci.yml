@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [20.x]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: bigprint-app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: bigprint-app
+        run: npm ci
+
+      - name: Run tests
+        working-directory: bigprint-app
+        run: npm test
+
+      - name: Build (verify compilation)
+        working-directory: bigprint-app
+        run: npm run build
+        env:
+          # Skip native binary rebuild in CI — not packaging
+          SKIP_NATIVE_REBUILD: true
