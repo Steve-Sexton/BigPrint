@@ -141,8 +141,7 @@ export function Toolbar() {
       scale,
       tiling,
       grid,
-      inkSaver,
-      lastSourceFile: source.filePath
+      inkSaver
     })
   }, [source, scale, tiling, grid, inkSaver])
 

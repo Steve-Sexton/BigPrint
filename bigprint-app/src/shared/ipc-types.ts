@@ -93,7 +93,6 @@ export interface ExportResult {
 export interface PrinterInfo {
   name: string
   displayName: string
-  isDefault: boolean
 }
 
 export interface PrintParams {
@@ -114,26 +113,18 @@ export interface PrintResult {
   errorMessage?: string
 }
 
-export interface PrinterCalibration {
-  scaleX: number
-  scaleY: number
-  updatedAt: string
-}
-
 export interface SaveProjectParams {
   filePath: string
   scale: ScaleSettings
   tiling: TilingSettings
   grid: GridSettings
   inkSaver: InkSaverSettings
-  lastSourceFile?: string
 }
 
 // ── Persisted user preferences ────────────────────────────────────────────────
 // Saved to userData/preferences.json between sessions.
 // Does NOT include per-image state (dpi, outputScale, crop, selectedPages).
-// printerScaleX/Y are included here as "last used" values; per-printer
-// corrections are also persisted separately in CalibrationStore.
+// printerScaleX/Y are persisted here as the globally "last used" values.
 export interface AppPreferences {
   tiling: TilingSettings
   grid: GridSettings
@@ -148,7 +139,6 @@ export interface LoadProjectResult {
   tiling: TilingSettings
   grid: GridSettings
   inkSaver: InkSaverSettings
-  lastSourceFile?: string
 }
 
 // The API exposed by the preload script to the renderer
@@ -165,8 +155,6 @@ export interface ElectronAPI {
   exportTestGrid: (params: TestGridParams) => Promise<ExportResult>
   printDirect: (params: PrintParams) => Promise<PrintResult>
   getSystemPrinters: () => Promise<PrinterInfo[]>
-  saveCalibration: (printerId: string, cal: PrinterCalibration) => Promise<void>
-  loadCalibration: (printerId: string) => Promise<PrinterCalibration | null>
   loadPreferences: () => Promise<AppPreferences | null>
   savePreferences: (prefs: AppPreferences) => Promise<void>
   onThemeChange: (cb: (isDark: boolean) => void) => () => void

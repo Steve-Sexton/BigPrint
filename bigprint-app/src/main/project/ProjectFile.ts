@@ -3,13 +3,15 @@ import type { ScaleSettings, TilingSettings, GridSettings, InkSaverSettings, Sav
 
 const PROJECT_VERSION = 1
 
+// Intentionally does NOT include any source-image path — per README, the
+// .tilr file is a pure settings payload. This avoids leaking absolute local
+// paths when users share projects.
 interface ProjectData {
   version: number
   scale: ScaleSettings
   tiling: TilingSettings
   grid: GridSettings
   inkSaver: InkSaverSettings
-  lastSourceFile?: string
 }
 
 // Validate that a loaded project file has the required structure and safe values.
@@ -56,8 +58,7 @@ export async function saveProject(filePath: string, params: SaveProjectParams): 
     scale: params.scale,
     tiling: params.tiling,
     grid: params.grid,
-    inkSaver: params.inkSaver,
-    lastSourceFile: params.lastSourceFile
+    inkSaver: params.inkSaver
   }
   await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8')
 }
@@ -74,7 +75,6 @@ export async function loadProject(filePath: string): Promise<LoadProjectResult> 
     scale: d.scale,
     tiling: d.tiling,
     grid: d.grid,
-    inkSaver: d.inkSaver,
-    lastSourceFile: d.lastSourceFile
+    inkSaver: d.inkSaver
   }
 }

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { ElectronAPI, ExportPDFParams, PrintParams, SaveProjectParams, PrinterCalibration, TestGridParams, AppPreferences } from '../shared/ipc-types'
+import type { ElectronAPI, ExportPDFParams, PrintParams, SaveProjectParams, TestGridParams, AppPreferences } from '../shared/ipc-types'
 
 const api: ElectronAPI = {
   openFile: () => ipcRenderer.invoke('file:open'),
@@ -24,11 +24,6 @@ const api: ElectronAPI = {
   exportTestGrid: (params: TestGridParams) => ipcRenderer.invoke('export:testgrid', params),
   printDirect: (params: PrintParams) => ipcRenderer.invoke('print:direct', params),
   getSystemPrinters: () => ipcRenderer.invoke('print:getPrinters'),
-
-  saveCalibration: (printerId: string, cal: PrinterCalibration) =>
-    ipcRenderer.invoke('calibration:save', printerId, cal),
-  loadCalibration: (printerId: string) =>
-    ipcRenderer.invoke('calibration:load', printerId),
 
   onThemeChange: (cb: (isDark: boolean) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, isDark: boolean) => cb(isDark)
