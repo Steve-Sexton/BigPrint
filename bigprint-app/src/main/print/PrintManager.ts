@@ -10,8 +10,9 @@ export async function printDirect(
   params: PrintParams
 ): Promise<PrintResult> {
   try {
-    // Strategy: generate a temp PDF, then print it via webContents.printToPDF
-    // For simplicity in MVP, we generate the PDF and open the system print dialog
+    // Generate the full multi-page tiled PDF into a temp file, then hand it
+    // to Electron's webContents.print for the OS print dialog.  Temp file is
+    // always deleted (see finally block below).
     const tmpPath = path.join(os.tmpdir(), `bigprint-tmp-${Date.now()}.pdf`)
 
     const exportResult = await exportToPDF({
@@ -31,11 +32,20 @@ export async function printDirect(
       return { success: false, errorMessage: exportResult.errorMessage }
     }
 
-    // Load PDF in a hidden window and print it
+    // Load PDF in a hidden window and print it.
+    // Wrap the full loadURL + print flow in try/finally so the window is
+    // always destroyed — even if loadURL throws (e.g. temp file unreadable),
+    // the print callback never fires, or print throws synchronously.
     const printWin = new BrowserWindow({ show: false, webPreferences: { sandbox: false } })
-    await printWin.loadURL(`file://${tmpPath}`)
+    let winClosed = false
+    const closeWin = () => {
+      if (winClosed) return
+      winClosed = true
+      if (!printWin.isDestroyed()) printWin.close()
+    }
 
     try {
+      await printWin.loadURL(`file://${tmpPath}`)
       await new Promise<void>((resolve, reject) => {
         printWin.webContents.print(
           {
@@ -45,13 +55,13 @@ export async function printDirect(
             margins: { marginType: 'none' }
           },
           (success, reason) => {
-            printWin.close()
             if (success) resolve()
             else reject(new Error(reason))
           }
         )
       })
     } finally {
+      closeWin()
       // Always remove the temp file, regardless of whether print succeeded or failed
       await fs.unlink(tmpPath).catch(() => {})
     }

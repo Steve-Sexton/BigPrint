@@ -1,7 +1,7 @@
 // Type-safe wrappers around window.electronAPI
 import type {
   OpenFileResult, ImageMetaResult, ExportPDFParams, ExportResult,
-  PrintParams, PrintResult, PrinterInfo, PrinterCalibration,
+  PrintParams, PrintResult, PrinterInfo,
   SaveProjectParams, LoadProjectResult, TestGridParams, AppPreferences
 } from '../../shared/ipc-types'
 
@@ -41,12 +41,6 @@ export const bridge = {
 
   getPrinters: (): Promise<PrinterInfo[]> =>
     window.electronAPI.getSystemPrinters(),
-
-  saveCalibration: (printerId: string, cal: PrinterCalibration): Promise<void> =>
-    window.electronAPI.saveCalibration(printerId, cal),
-
-  loadCalibration: (printerId: string): Promise<PrinterCalibration | null> =>
-    window.electronAPI.loadCalibration(printerId),
 
   showSaveDialog: (defaultName: string, filters: Array<{ name: string; extensions: string[] }>): Promise<string | null> =>
     window.electronAPI.showSaveDialog(defaultName, filters),

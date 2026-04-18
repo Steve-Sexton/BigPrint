@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { useAppStore } from '../store/appStore'
+import type { AppState } from '../store/types'
 import { computeTileGrid } from '../../shared/TilingCalculator'
 import { getPaperSize } from '../../shared/constants'
 
@@ -39,7 +40,7 @@ function drawPreview(
   canvasW: number,
   canvasH: number,
   img: HTMLImageElement,
-  state: ReturnType<typeof useAppStore>
+  state: AppState
 ) {
   ctx.clearRect(0, 0, canvasW, canvasH)
 
@@ -125,8 +126,8 @@ function drawPreview(
 
   const pageWPx = paper.widthMm * pxPerMm * previewScale
   const pageHPx = paper.heightMm * pxPerMm * previewScale
-  const strideXPx = (paper.widthMm - state.tiling.overlapMmLeft) * pxPerMm * previewScale
-  const strideYPx = (paper.heightMm - state.tiling.overlapMmTop) * pxPerMm * previewScale
+  const strideXPx = (paper.widthMm - state.tiling.overlapMmLeft - state.tiling.overlapMmRight) * pxPerMm * previewScale
+  const strideYPx = (paper.heightMm - state.tiling.overlapMmTop - state.tiling.overlapMmBottom) * pxPerMm * previewScale
 
   // When a crop is committed, draw the grid over the crop region
   const gridOriginX = state.crop ? state.crop.srcX * previewScale : 0
@@ -159,8 +160,8 @@ function drawPreview(
   let cOffYPrev = 0
   if (state.tiling.centerImage) {
     // imageSrcW/H already declared above for the computeTileGrid call
-    const strideXMm = Math.max(paper.widthMm - state.tiling.overlapMmLeft, 1)
-    const strideYMm = Math.max(paper.heightMm - state.tiling.overlapMmTop, 1)
+    const strideXMm = Math.max(paper.widthMm - state.tiling.overlapMmLeft - state.tiling.overlapMmRight, 1)
+    const strideYMm = Math.max(paper.heightMm - state.tiling.overlapMmTop - state.tiling.overlapMmBottom, 1)
     const assembledWMm = (cols - 1) * strideXMm + paper.widthMm
     const assembledHMm = (rows - 1) * strideYMm + paper.heightMm
     // Divide by printerScale (mirrors PDFEngine.ts and TilingCalculator.ts) —
@@ -175,33 +176,68 @@ function drawPreview(
 
   const gridSpacingPx = state.grid.diagonalSpacingMm * pxPerMm * previewScale
 
-  // ── Horizontal (square) grid ─────────────────────────────────────────────
-  if (state.grid.showGrid) {
+  // ── Overlap-area shading (drawn below the grid) ──────────────────────────
+  if (state.tiling.showOverlapArea) {
     ctx.save()
-    ctx.strokeStyle = 'rgba(40,40,40,0.65)'
-    ctx.lineWidth = 1.0 / state.zoom
+    ctx.fillStyle = 'rgba(255, 230, 140, 0.25)'
+    const oLmm = state.tiling.overlapMmLeft
+    const oRmm = state.tiling.overlapMmRight
+    const oTmm = state.tiling.overlapMmTop
+    const oBmm = state.tiling.overlapMmBottom
+    const oLpx = oLmm * pxPerMm * previewScale
+    const oRpx = oRmm * pxPerMm * previewScale
+    const oTpx = oTmm * pxPerMm * previewScale
+    const oBpx = oBmm * pxPerMm * previewScale
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         const tx = gridOriginX - cOffXPrev + col * strideXPx
         const ty = gridOriginY - cOffYPrev + row * strideYPx
-        drawHorizontalGridPreview(ctx, tx, ty, pageWPx, pageHPx,
-          gridSpacingPx, state.grid.alignToImage)
+        if (col > 0 && oLpx > 0)            ctx.fillRect(tx, ty, oLpx, pageHPx)
+        if (col < cols - 1 && oRpx > 0)     ctx.fillRect(tx + pageWPx - oRpx, ty, oRpx, pageHPx)
+        if (row > 0 && oTpx > 0)            ctx.fillRect(tx, ty, pageWPx, oTpx)
+        if (row < rows - 1 && oBpx > 0)     ctx.fillRect(tx, ty + pageHPx - oBpx, pageWPx, oBpx)
       }
     }
     ctx.restore()
   }
 
-  // ── Diagonal grid ────────────────────────────────────────────────────────
-  if (state.grid.showGridDiagonals) {
+  // The "image rect" in canvas coords for grid clipping: the crop rect when
+  // cropped, else the full image at natural size.  Kept axis-aligned so canvas
+  // clip is straightforward.
+  const imgClipX = state.crop ? state.crop.srcX * previewScale : 0
+  const imgClipY = state.crop ? state.crop.srcY * previewScale : 0
+  const imgClipW = imageSrcW * previewScale
+  const imgClipH = imageSrcH * previewScale
+  const needGridClip = !state.grid.extendBeyondImage || state.grid.suppressOverImage
+
+  // Bundle grid + diagonals inside a single graphics state so both obey
+  // the same clip region.
+  if (state.grid.showGrid || state.grid.showGridDiagonals) {
     ctx.save()
+    if (needGridClip) {
+      ctx.beginPath()
+      if (state.grid.suppressOverImage) {
+        // Even-odd: outer (whole drawn canvas region) minus image rect = draw outside only
+        const outerX = gridOriginX - cOffXPrev - pageWPx
+        const outerY = gridOriginY - cOffYPrev - pageHPx
+        const outerW = cols * strideXPx + pageWPx * 2
+        const outerH = rows * strideYPx + pageHPx * 2
+        ctx.rect(outerX, outerY, outerW, outerH)
+        ctx.rect(imgClipX, imgClipY, imgClipW, imgClipH)
+        ctx.clip('evenodd')
+      } else {
+        ctx.rect(imgClipX, imgClipY, imgClipW, imgClipH)
+        ctx.clip()
+      }
+    }
     ctx.strokeStyle = 'rgba(40,40,40,0.65)'
     ctx.lineWidth = 1.0 / state.zoom
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         const tx = gridOriginX - cOffXPrev + col * strideXPx
         const ty = gridOriginY - cOffYPrev + row * strideYPx
-        drawDiagonalGridPreview(ctx, tx, ty, pageWPx, pageHPx,
-          gridSpacingPx, state.grid.alignToImage)
+        if (state.grid.showGrid)          drawHorizontalGridPreview(ctx, tx, ty, pageWPx, pageHPx, gridSpacingPx, state.grid.alignToImage)
+        if (state.grid.showGridDiagonals) drawDiagonalGridPreview(ctx, tx, ty, pageWPx, pageHPx, gridSpacingPx, state.grid.alignToImage)
       }
     }
     ctx.restore()

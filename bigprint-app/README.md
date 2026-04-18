@@ -64,7 +64,7 @@ src/
 │   ├── image/     Sharp-based image pipeline + ink saver
 │   ├── pdf/       PDF export engine + grid renderer
 │   ├── print/     Direct printing via Electron webContents
-│   ├── calibration/  Per-printer calibration store
+│   ├── preferences/  App-level preferences (JSON) in userData
 │   └── project/   Project file (.tilr) save/load
 ├── preload/       contextBridge API surface
 ├── renderer/      React 18 UI
@@ -81,10 +81,10 @@ src/
 
 ## Features
 
-- Open images (JPEG, PNG, TIFF, BMP, WebP, SVG) and PDF files
+- Open images (JPEG, PNG, TIFF, BMP, GIF, WebP, SVG) and PDF files
 - Auto-detect DPI from embedded metadata
 - Two-point on-canvas calibration for accurate scale
-- Tile across any paper size (Letter, A4, A3, A3+, Legal, Tabloid…)
+- Tile across any paper size (Letter, Legal, Tabloid, A3, A4, A5)
 - Configurable overlap on all four edges
 - Diagonal or grid alignment lines for easy assembly
 - Cut marks and page labels (grid A1/B2 or sequential 1/12)

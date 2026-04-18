@@ -2,7 +2,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import sharp from 'sharp'
 import fs from 'fs/promises'
 import type { ExportPDFParams, ExportResult, TestGridParams } from '../../shared/ipc-types'
-import { computeTileGrid, type TileRect } from '../../shared/TilingCalculator'
+import { computeTileGrid, computeImageRectOnTile, type TileRect } from '../../shared/TilingCalculator'
 import { getPaperSize } from '../../shared/constants'
 import { applyInkSaver } from '../image/InkSaver'
 import { renderGridOnPage } from './GridRenderer'
@@ -70,8 +70,8 @@ export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult
     let centerOffsetXPx = 0
     let centerOffsetYPx = 0
     if (params.tiling.centerImage) {
-      const strideXMm = Math.max(paper.widthMm - params.tiling.overlapMmLeft, 1)
-      const strideYMm = Math.max(paper.heightMm - params.tiling.overlapMmTop, 1)
+      const strideXMm = Math.max(paper.widthMm - params.tiling.overlapMmLeft - params.tiling.overlapMmRight, 1)
+      const strideYMm = Math.max(paper.heightMm - params.tiling.overlapMmTop - params.tiling.overlapMmBottom, 1)
       const assembledWidthMm  = (cols - 1) * strideXMm + paper.widthMm
       const assembledHeightMm = (rows - 1) * strideYMm + paper.heightMm
       const imageWidthMm  = imageWidthPx  * mmPerPx / params.scale.printerScaleX
@@ -98,9 +98,13 @@ export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult
         const padLeft = Math.max(0, -tileImageX)
         const padTop  = Math.max(0, -tileImageY)
 
-        // Start coordinates inside the source image (always ≥ 0)
-        const cropLeft = Math.min(Math.max(0, tileImageX), fullWidthPx - 1)
-        const cropTop  = Math.min(Math.max(0, tileImageY), fullHeightPx - 1)
+        // Start coordinates inside the source image (always ≥ 0).
+        // Clamp to fullWidthPx / fullHeightPx so that a tile starting exactly at
+        // the right/bottom edge produces cropW/cropH = 0 (⇒ isTileBlank),
+        // not 1 pixel (which would leak a stripe of the rightmost column into
+        // off-image tiles when skipBlankPages is off).
+        const cropLeft = Math.min(Math.max(0, tileImageX), fullWidthPx)
+        const cropTop  = Math.min(Math.max(0, tileImageY), fullHeightPx)
 
         // How much image content fits in this tile (after leading padding)
         const cropW = Math.min(tile.srcW - padLeft, fullWidthPx - cropLeft)
@@ -170,6 +174,17 @@ export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult
           height: pageHeightPt
         })
 
+        // Compute the image rect on this tile (used by grid clipping flags).
+        // tileImageX/Y can be negative (image starts inside the page) or past
+        // the image bounds (fully blank tile) — computeImageRectOnTile handles
+        // both and returns a zero-area rect for blank tiles.
+        const imageRectMm = computeImageRectOnTile({
+          tileImageX, tileImageY,
+          tileSrcW: tile.srcW, tileSrcH: tile.srcH,
+          imageWidthPx: fullWidthPx, imageHeightPx: fullHeightPx,
+          paperWidthMm: paper.widthMm, paperHeightMm: paper.heightMm
+        })
+
         // Render grid / marks / labels as vector PDF content on top
         renderGridOnPage({
           page: pdfPage,
@@ -181,7 +196,15 @@ export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult
           row, col,
           totalRows: rows,
           totalCols: cols,
-          labelFont
+          labelFont,
+          imageRectMm,
+          overlapMm: {
+            top:    params.tiling.overlapMmTop,
+            right:  params.tiling.overlapMmRight,
+            bottom: params.tiling.overlapMmBottom,
+            left:   params.tiling.overlapMmLeft
+          },
+          showOverlapArea: params.tiling.showOverlapArea
         })
 
         pagesWritten++

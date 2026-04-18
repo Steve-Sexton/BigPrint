@@ -1,15 +1,14 @@
-import { ipcMain, dialog, BrowserWindow, nativeTheme, webContents } from 'electron'
+import { ipcMain, dialog, BrowserWindow } from 'electron'
 import fs from 'fs/promises'
 import path from 'path'
 import { PDFDocument } from 'pdf-lib'
 import type {
   ExportPDFParams, PrintParams, SaveProjectParams,
-  PrinterCalibration, TestGridParams, AppPreferences
+  TestGridParams, AppPreferences
 } from '../../shared/ipc-types'
 import { getImageMeta, getPreviewDataUrl, getSupportedMimeType } from '../image/ImagePipeline'
 import { exportToPDF, exportTestGridPDF } from '../pdf/PDFEngine'
 import { printDirect } from '../print/PrintManager'
-import { CalibrationStore } from '../calibration/CalibrationStore'
 import { PreferencesStore } from '../preferences/PreferencesStore'
 import { saveProject, loadProject } from '../project/ProjectFile'
 import { SUPPORTED_INPUT_EXTENSIONS } from '../../shared/constants'
@@ -34,12 +33,10 @@ function assertFilePath(filePath: unknown): string {
   return filePath
 }
 
-// PDF.js-based preview for PDF pages (rendered in main via PDF.js in a headless window)
-// MVP: render PDF pages via sharp's PDF rasterisation if available, otherwise
-// we delegate to renderer using pdfjs-dist
+// Render a PDF page to a PNG data URL via Sharp (requires libvips-poppler).
+// Returns '' when unavailable (common on Windows), where the renderer falls
+// back to PDF.js in usePDFPreview.ts.
 async function renderPDFPageDataUrl(filePath: string, pageIndex: number, scale: number): Promise<string> {
-  // Sharp supports PDF rasterisation via libvips with poppler
-  // Fall back gracefully if not available
   try {
     const sharp = (await import('sharp')).default
     const buf = await sharp(filePath, { page: pageIndex, density: Math.round(96 * scale) })
@@ -47,7 +44,8 @@ async function renderPDFPageDataUrl(filePath: string, pageIndex: number, scale: 
       .toBuffer()
     return `data:image/png;base64,${buf.toString('base64')}`
   } catch {
-    // Return empty placeholder — renderer will use PDF.js directly
+    // Sharp lacks poppler on this build — signal the renderer to rasterise
+    // the page via PDF.js instead (usePDFPreview.ts handles the fallback).
     return ''
   }
 }
@@ -178,17 +176,8 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const printers = await win.webContents.getPrintersAsync()
     return printers.map(p => ({
       name: p.name,
-      displayName: p.displayName ?? p.name,
-      isDefault: p.isDefault ?? false
+      displayName: p.displayName ?? p.name
     }))
-  })
-
-  // ── Calibration ────────────────────────────────────────────────────────
-  ipcMain.handle('calibration:save', async (_event, printerId: string, cal: PrinterCalibration) => {
-    await CalibrationStore.save(printerId, cal)
-  })
-  ipcMain.handle('calibration:load', async (_event, printerId: string) => {
-    return CalibrationStore.load(printerId)
   })
 
   // ── Preferences ────────────────────────────────────────────────────────────

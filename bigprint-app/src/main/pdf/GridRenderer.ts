@@ -1,4 +1,7 @@
-import { PDFPage, PDFFont, rgb, LineCapStyle } from 'pdf-lib'
+import {
+  PDFPage, PDFFont, rgb, LineCapStyle,
+  pushGraphicsState, popGraphicsState, rectangle, clip, clipEvenOdd, endPath
+} from 'pdf-lib'
 import type { GridSettings } from '../../shared/ipc-types'
 import type { TileRect } from '../../shared/TilingCalculator'
 import { getLabelForTile } from '../../shared/TilingCalculator'
@@ -17,18 +20,134 @@ export interface GridRenderParams {
   totalRows: number
   totalCols: number
   labelFont?: PDFFont   // must be embedded in the parent PDFDocument before use
+  /** Image area on this tile in page-mm-from-top-left.  Required when
+   *  extendBeyondImage=false or suppressOverImage=true (otherwise ignored). */
+  imageRectMm?: { xMm: number; yMm: number; wMm: number; hMm: number }
+  /** Overlap margins in mm — used only when showOverlapArea=true. */
+  overlapMm?: { top: number; right: number; bottom: number; left: number }
+  /** From TilingSettings.showOverlapArea — enables margin-strip shading. */
+  showOverlapArea?: boolean
 }
 
 export function renderGridOnPage(params: GridRenderParams): void {
   const { grid } = params
 
-  // Horizontal and diagonal grids are independent — either or both may be on
-  if (grid.showGrid) renderHorizontalGrid(params)
-  if (grid.showGridDiagonals) renderDiagonalGrid(params)
+  // Overlap shading (below grid lines so the grid remains visible on top).
+  if (params.showOverlapArea) renderOverlapShading(params)
+
+  // Horizontal and diagonal grids are independent — either or both may be on.
+  // Both honour extendBeyondImage / suppressOverImage via graphics-state clip.
+  if (grid.showGrid || grid.showGridDiagonals) {
+    const pushedClip = pushGridClip(params)
+    if (grid.showGrid) renderHorizontalGrid(params)
+    if (grid.showGridDiagonals) renderDiagonalGrid(params)
+    if (pushedClip) params.page.pushOperators(popGraphicsState())
+  }
 
   if (grid.showCutMarks) renderCutMarks(params)
   if (grid.showPageLabels) renderPageLabel(params)
   if (grid.showScaleAnnotation) renderScaleAnnotation(params)
+}
+
+/**
+ * Push a graphics-state clip around the image rect when a relevant flag is set.
+ * Returns true when a clip (and matching q) was pushed, so the caller can Q.
+ *
+ * - extendBeyondImage=false → clip TO the image rect (non-zero winding).
+ * - suppressOverImage=true  → clip AROUND the image rect (even-odd, image becomes a hole).
+ */
+function pushGridClip(params: GridRenderParams): boolean {
+  const { page, grid, imageRectMm, paperWidthMm, paperHeightMm } = params
+  const clipToImage     = !grid.extendBeyondImage
+  const clipAwayFromImg = grid.suppressOverImage
+  if (!clipToImage && !clipAwayFromImg) return false
+  if (!imageRectMm) return false
+  // A zero-area image rect means the tile is entirely off-image.
+  //  - For clipToImage: nothing should render → push an empty clip.
+  //  - For clipAwayFromImg: everything should render → skip the clip.
+  if (imageRectMm.wMm <= 0 || imageRectMm.hMm <= 0) {
+    if (clipAwayFromImg) return false
+    // clipToImage with zero area: push a degenerate clip so nothing draws
+    page.pushOperators(
+      pushGraphicsState(),
+      rectangle(0, 0, 0, 0),
+      clip(),
+      endPath()
+    )
+    return true
+  }
+
+  const imgXpt = imageRectMm.xMm * MM_TO_PT
+  // pdf-lib origin = bottom-left; we store rects top-left origin, so flip y.
+  const imgYpt = (paperHeightMm - imageRectMm.yMm - imageRectMm.hMm) * MM_TO_PT
+  const imgWpt = imageRectMm.wMm * MM_TO_PT
+  const imgHpt = imageRectMm.hMm * MM_TO_PT
+
+  page.pushOperators(pushGraphicsState())
+  if (clipAwayFromImg) {
+    // Outer rect + inner rect with even-odd fill rule → image rect is a hole.
+    page.pushOperators(
+      rectangle(0, 0, paperWidthMm * MM_TO_PT, paperHeightMm * MM_TO_PT),
+      rectangle(imgXpt, imgYpt, imgWpt, imgHpt),
+      clipEvenOdd(),
+      endPath()
+    )
+  } else {
+    page.pushOperators(
+      rectangle(imgXpt, imgYpt, imgWpt, imgHpt),
+      clip(),
+      endPath()
+    )
+  }
+  return true
+}
+
+/**
+ * Shade the overlap margin strips on this tile so users can see where
+ * adjacent tiles meet.  Strips are only drawn on edges that actually have a
+ * neighbouring tile (e.g. the leftmost column has no left-overlap).
+ */
+function renderOverlapShading(params: GridRenderParams): void {
+  const { page, paperWidthMm, paperHeightMm, overlapMm, row, col, totalRows, totalCols } = params
+  if (!overlapMm) return
+  const shade = rgb(1.0, 0.90, 0.55)  // soft amber
+  const op = 0.25
+  const pageWpt = paperWidthMm * MM_TO_PT
+  const pageHpt = paperHeightMm * MM_TO_PT
+
+  if (col > 0 && overlapMm.left > 0) {
+    page.drawRectangle({
+      x: 0, y: 0,
+      width: overlapMm.left * MM_TO_PT,
+      height: pageHpt,
+      color: shade, opacity: op, borderWidth: 0
+    })
+  }
+  if (col < totalCols - 1 && overlapMm.right > 0) {
+    page.drawRectangle({
+      x: pageWpt - overlapMm.right * MM_TO_PT, y: 0,
+      width: overlapMm.right * MM_TO_PT,
+      height: pageHpt,
+      color: shade, opacity: op, borderWidth: 0
+    })
+  }
+  if (row > 0 && overlapMm.top > 0) {
+    // In pdf-lib coords the top strip is at the top of the page (high y).
+    page.drawRectangle({
+      x: 0, y: pageHpt - overlapMm.top * MM_TO_PT,
+      width: pageWpt,
+      height: overlapMm.top * MM_TO_PT,
+      color: shade, opacity: op, borderWidth: 0
+    })
+  }
+  if (row < totalRows - 1 && overlapMm.bottom > 0) {
+    page.drawRectangle({
+      x: 0, y: 0,
+      width: pageWpt,
+      height: overlapMm.bottom * MM_TO_PT,
+      color: shade, opacity: op, borderWidth: 0
+    })
+  }
 }
 
 function renderDiagonalGrid(params: GridRenderParams): void {

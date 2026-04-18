@@ -1,5 +1,5 @@
 import { useAppStore } from '../store/appStore'
-import { computeDpiFromTwoPoints, mmToInch } from '../../shared/calibration'
+import { computeDpiFromTwoPoints } from '../../shared/calibration'
 
 export function useCalibration() {
   const store = useAppStore()

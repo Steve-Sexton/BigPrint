@@ -41,8 +41,11 @@ export interface AppState {
   // Crop
   crop: CropRect | null            // committed crop (null = full image)
   cropMode: 'idle' | 'drawing'    // active selection drag in progress
-  cropAnchor: { xPx: number; yPx: number } | null   // first drag corner
-  cropCurrent: { xPx: number; yPx: number } | null  // live drag corner
+  // Anchor/current are in source-image pixel coords produced by clientToSrcCoords
+  // (PreviewCanvas.tsx). Kept as plain {x,y} because the consumers do arithmetic
+  // like Math.min(anchor.x, current.x) when committing the rectangle.
+  cropAnchor: { x: number; y: number } | null   // first drag corner
+  cropCurrent: { x: number; y: number } | null  // live drag corner
   // Measurement
   measureMode: 'idle' | 'point1' | 'point2'
   measurePoint1: { xPx: number; yPx: number } | null

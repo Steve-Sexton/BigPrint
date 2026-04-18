@@ -38,7 +38,7 @@ export function computeTileGrid(params: TilingCalcParams): TileGridResult {
     imageWidthPx, imageHeightPx,
     dpi, outputScale, printerScaleX, printerScaleY,
     paperSizeId, orientation,
-    overlapMmTop, overlapMmLeft
+    overlapMmTop, overlapMmRight, overlapMmBottom, overlapMmLeft
   } = params
 
   // Image physical dimensions in mm.
@@ -54,9 +54,11 @@ export function computeTileGrid(params: TilingCalcParams): TileGridResult {
   const paper = getPaperSize(paperSizeId, orientation)
   const { widthMm, heightMm } = paper
 
-  // Stride: how far each subsequent page advances into the image
-  const strideXMm = widthMm - overlapMmLeft
-  const strideYMm = heightMm - overlapMmTop
+  // Stride: how far each subsequent page advances into the image.
+  // Subtract the overlap on BOTH opposing edges — tile N's right overlap and
+  // tile N+1's left overlap form one shared stitching seam, so both count.
+  const strideXMm = widthMm - overlapMmLeft - overlapMmRight
+  const strideYMm = heightMm - overlapMmTop - overlapMmBottom
 
   // Clamp stride to positive value
   const safeStrideX = Math.max(strideXMm, 1)
@@ -90,6 +92,53 @@ export function computeTileGrid(params: TilingCalcParams): TileGridResult {
   }
 
   return { cols, rows, tiles, imageWidthMm, imageHeightMm }
+}
+
+/**
+ * Given a tile's offset into the image (in source pixels, possibly negative
+ * when the tile starts before the image origin) and the source image
+ * dimensions, return the rectangle in PAGE-mm coordinates (0,0 = top-left of
+ * the page) where the actual image content lives on this tile. Whitespace
+ * padding around the image is excluded.
+ *
+ * Used by:
+ *   - GridRenderer (PDF) to clip the grid to / away from the image.
+ *   - usePreviewRenderer to shade overlap zones on the preview canvas.
+ *
+ * For degenerate tiles (srcW/srcH === 0, e.g. the standalone calibration
+ * grid), returns the full page so flags behave as no-ops.
+ */
+export function computeImageRectOnTile(params: {
+  tileImageX: number    // tile's top-left in src-px coords (can be <0 or ≥imageWidthPx)
+  tileImageY: number
+  tileSrcW: number
+  tileSrcH: number
+  imageWidthPx: number
+  imageHeightPx: number
+  paperWidthMm: number
+  paperHeightMm: number
+}): { xMm: number; yMm: number; wMm: number; hMm: number } {
+  const { tileImageX, tileImageY, tileSrcW, tileSrcH,
+          imageWidthPx, imageHeightPx,
+          paperWidthMm, paperHeightMm } = params
+
+  if (tileSrcW === 0 || tileSrcH === 0) {
+    return { xMm: 0, yMm: 0, wMm: paperWidthMm, hMm: paperHeightMm }
+  }
+
+  const padLeft = Math.max(0, -tileImageX)
+  const padTop  = Math.max(0, -tileImageY)
+  const cropLeft = Math.min(Math.max(0, tileImageX), imageWidthPx)
+  const cropTop  = Math.min(Math.max(0, tileImageY), imageHeightPx)
+  const cropW = Math.max(0, Math.min(tileSrcW - padLeft, imageWidthPx - cropLeft))
+  const cropH = Math.max(0, Math.min(tileSrcH - padTop,  imageHeightPx - cropTop))
+
+  return {
+    xMm: padLeft * paperWidthMm / tileSrcW,
+    yMm: padTop  * paperHeightMm / tileSrcH,
+    wMm: cropW   * paperWidthMm / tileSrcW,
+    hMm: cropH   * paperHeightMm / tileSrcH
+  }
 }
 
 export function getLabelForTile(row: number, col: number, totalRows: number, totalCols: number, style: 'sequential' | 'grid'): string {
