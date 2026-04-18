@@ -1,11 +1,17 @@
 import React from 'react'
-import { useAppStore } from '../store/appStore'
+import { useAppStore, INK_SAVER_LIGHT_PRESET, INK_SAVER_HEAVY_PRESET } from '../store/appStore'
 import { NumericInput } from './NumericInput'
 
-const PRESET_MODES = [
-  { id: 'light' as const,  label: '☀ Lighten areas',  desc: 'Mild: brightness 130, gamma 1.5, edge-fade 25%' },
-  { id: 'heavy' as const,  label: '🌑 Lighten more',   desc: 'Strong: brightness 160, gamma 2.2, edge-fade 55%' },
-  { id: 'custom' as const, label: '⚙ Custom',          desc: 'Adjust sliders manually' }
+// Derive descriptions from the actual preset constants so any future tuning of
+// brightness / gamma / edge-fade automatically updates the UI copy too.
+function describePreset(p: typeof INK_SAVER_LIGHT_PRESET): string {
+  return `brightness ${p.brightness}, gamma ${p.gamma}, edge-fade ${p.edgeFadeStrength}%`
+}
+
+const PRESET_MODES: Array<{ id: 'light' | 'heavy' | 'custom'; label: string; desc: string }> = [
+  { id: 'light',  label: '☀ Lighten areas', desc: `Mild: ${describePreset(INK_SAVER_LIGHT_PRESET)}` },
+  { id: 'heavy',  label: '🌑 Lighten more',  desc: `Strong: ${describePreset(INK_SAVER_HEAVY_PRESET)}` },
+  { id: 'custom', label: '⚙ Custom',        desc: 'Adjust sliders manually' }
 ]
 
 export function InkSaverSettings() {

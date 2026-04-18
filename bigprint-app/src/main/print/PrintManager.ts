@@ -36,7 +36,16 @@ export async function printDirect(
     // Wrap the full loadURL + print flow in try/finally so the window is
     // always destroyed — even if loadURL throws (e.g. temp file unreadable),
     // the print callback never fires, or print throws synchronously.
-    const printWin = new BrowserWindow({ show: false, webPreferences: { sandbox: false } })
+    // The print window only renders a local PDF in Chromium's built-in viewer,
+    // so it does not need Node/preload access — run it sandboxed.
+    const printWin = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    })
     let winClosed = false
     const closeWin = () => {
       if (winClosed) return

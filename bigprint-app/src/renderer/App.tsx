@@ -11,6 +11,10 @@ import type { AppPreferences } from '../shared/ipc-types'
 export function App() {
   const store = useAppStore()
   const isDraggingOver = useRef(false)
+  // Prevents the debounced save effect from firing during the initial hydration
+  // pass (load prefs → set store → save effect would rewrite the file with the
+  // same content). Flipped to true after load completes (success or not).
+  const hydrated = useRef(false)
 
   // ── Dark mode initialisation ──────────────────────────────────────────────
   useEffect(() => {
@@ -22,21 +26,24 @@ export function App() {
 
   // ── Load persisted preferences on startup ─────────────────────────────────
   useEffect(() => {
-    bridge.loadPreferences().then(prefs => {
-      if (!prefs) return   // first launch — use DEFAULT_STATE as-is
-      store.setTiling(prefs.tiling)
-      store.setGrid(prefs.grid)
-      store.setInkSaver(prefs.inkSaver)
-      store.setScale({ printerScaleX: prefs.printerScaleX, printerScaleY: prefs.printerScaleY })
-      // Apply preset last so preset values aren't overwritten by the above
-      if (prefs.inkSaverPreset) store.setInkSaverPreset(prefs.inkSaverPreset)
-    }).catch(err => console.warn('[App] loadPreferences failed:', err))
+    bridge.loadPreferences()
+      .then(prefs => {
+        if (!prefs) return   // first launch — use DEFAULT_STATE as-is
+        store.setTiling(prefs.tiling)
+        store.setGrid(prefs.grid)
+        store.setInkSaver(prefs.inkSaver)
+        store.setScale({ printerScaleX: prefs.printerScaleX, printerScaleY: prefs.printerScaleY })
+        // Apply preset last so preset values aren't overwritten by the above
+        if (prefs.inkSaverPreset) store.setInkSaverPreset(prefs.inkSaverPreset)
+      })
+      .catch(err => console.warn('[App] loadPreferences failed:', err))
+      .finally(() => { hydrated.current = true })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Persist preferences whenever relevant settings change ─────────────────
   const savePrefsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
-    // Debounce — only write after 800ms of no further changes
+    if (!hydrated.current) return   // skip the initial pass — avoids redundant write on launch
     if (savePrefsTimer.current) clearTimeout(savePrefsTimer.current)
     savePrefsTimer.current = setTimeout(() => {
       const prefs: AppPreferences = {
@@ -78,20 +85,24 @@ export function App() {
     const file = e.dataTransfer.files[0]
     if (!file) return
 
-    const filePath = (file as File & { path?: string }).path
-    if (!filePath) return
-
-    // Determine MIME type from extension
-    const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
-    const mimeMap: Record<string, string> = {
-      jpg: 'image/jpeg', jpeg: 'image/jpeg',
-      png: 'image/png', gif: 'image/gif',
-      bmp: 'image/bmp', webp: 'image/webp',
-      tiff: 'image/tiff', tif: 'image/tiff',
-      svg: 'image/svg+xml',
-      pdf: 'application/pdf'
+    // Electron 32+ removed the non-standard File.path property. Resolve through
+    // the preload's webUtils.getPathForFile() shim instead.
+    const filePath = bridge.getPathForFile(file)
+    if (!filePath) {
+      alert('Could not resolve dropped file path. Try using the Open button.')
+      return
     }
-    const mimeType = mimeMap[ext] ?? 'application/octet-stream'
+
+    // Admit the dropped path into the main process's read allowlist so the
+    // subsequent image:* / pdf:* IPC calls are permitted.
+    let mimeType: string
+    try {
+      const reg = await bridge.registerFile(filePath)
+      mimeType = reg.mimeType
+    } catch (err) {
+      alert(`Failed to register dropped file: ${err}`)
+      return
+    }
 
     const isPdf = mimeType === 'application/pdf'
     store.setLoading(true, 'Loading image…')

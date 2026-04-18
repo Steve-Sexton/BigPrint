@@ -31,6 +31,14 @@ jobs:
         working-directory: bigprint-app
         run: npm ci
 
+      - name: Lint
+        working-directory: bigprint-app
+        run: npm run lint
+
+      - name: Prettier check
+        working-directory: bigprint-app
+        run: npm run format:check
+
       - name: Run tests
         working-directory: bigprint-app
         run: npm test

@@ -1,5 +1,6 @@
 import fs from 'fs/promises'
 import type { ScaleSettings, TilingSettings, GridSettings, InkSaverSettings, SaveProjectParams, LoadProjectResult } from '../../shared/ipc-types'
+import { validateScale, validateTiling, validateGrid, validateInkSaver } from '../../shared/ipc-types'
 
 const PROJECT_VERSION = 1
 
@@ -16,38 +17,16 @@ interface ProjectData {
 
 // Validate that a loaded project file has the required structure and safe values.
 // Returns a human-readable error string, or null if valid.
-function validateProjectData(data: unknown): string | null {
+export function validateProjectData(data: unknown): string | null {
   if (typeof data !== 'object' || data === null) return 'Not a JSON object'
-
   const d = data as Record<string, unknown>
 
   if (typeof d['version'] !== 'number' || d['version'] < 1) return 'Missing or invalid version'
 
-  // Validate scale
-  const scale = d['scale'] as Record<string, unknown> | undefined
-  if (!scale || typeof scale !== 'object') return 'Missing scale block'
-  if (typeof scale['dpi'] !== 'number' || scale['dpi'] < 1 || scale['dpi'] > 9600)
-    return `Invalid scale.dpi (${scale['dpi']}) — must be 1–9600`
-  if (typeof scale['outputScale'] !== 'number' || scale['outputScale'] <= 0 || scale['outputScale'] > 10)
-    return `Invalid scale.outputScale (${scale['outputScale']}) — must be > 0 and ≤ 10`
-  if (typeof scale['printerScaleX'] !== 'number' || scale['printerScaleX'] <= 0)
-    return `Invalid scale.printerScaleX`
-  if (typeof scale['printerScaleY'] !== 'number' || scale['printerScaleY'] <= 0)
-    return `Invalid scale.printerScaleY`
-
-  // Validate tiling
-  const tiling = d['tiling'] as Record<string, unknown> | undefined
-  if (!tiling || typeof tiling !== 'object') return 'Missing tiling block'
-  if (typeof tiling['paperSizeId'] !== 'string' || !tiling['paperSizeId'])
-    return 'Missing tiling.paperSizeId'
-
-  // Validate grid
-  const grid = d['grid'] as Record<string, unknown> | undefined
-  if (!grid || typeof grid !== 'object') return 'Missing grid block'
-
-  // Validate inkSaver
-  const inkSaver = d['inkSaver'] as Record<string, unknown> | undefined
-  if (!inkSaver || typeof inkSaver !== 'object') return 'Missing inkSaver block'
+  const s = validateScale(d['scale']);      if (s) return s
+  const t = validateTiling(d['tiling']);    if (t) return t
+  const g = validateGrid(d['grid']);        if (g) return g
+  const i = validateInkSaver(d['inkSaver']); if (i) return i
 
   return null
 }

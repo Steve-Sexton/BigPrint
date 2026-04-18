@@ -10,7 +10,8 @@ import { computeTileGrid } from '../../shared/TilingCalculator'
 type Section = 'scale' | 'tiling' | 'grid' | 'inkSaver' | 'pages'
 
 export function SettingsPanel() {
-  const [open, setOpen] = useState<Section>('scale')
+  // `null` means all sections collapsed — no unsound 'as Section' cast.
+  const [open, setOpen] = useState<Section | null>('scale')
   const { source, scale, tiling, crop, selectedPages } = useAppStore()
 
   let pageInfo = ''
@@ -62,7 +63,7 @@ export function SettingsPanel() {
           return (
             <div key={id} className="border-b border-gray-200 dark:border-gray-700">
               <button
-                onClick={() => setOpen(prev => prev === id ? '' as Section : id)}
+                onClick={() => setOpen(prev => prev === id ? null : id)}
                 className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               >
                 <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{label}</span>

@@ -60,28 +60,35 @@ npx electron-rebuild -f -w sharp
 ```
 src/
 ├── main/          Node.js process (Electron main)
-│   ├── ipc/       IPC channel handlers
+│   ├── ipc/       IPC channel handlers (with sender-frame guard + path allowlist)
 │   ├── image/     Sharp-based image pipeline + ink saver
 │   ├── pdf/       PDF export engine + grid renderer
 │   ├── print/     Direct printing via Electron webContents
-│   ├── preferences/  App-level preferences (JSON) in userData
+│   ├── preferences/  App-level preferences (atomic JSON) in userData
 │   └── project/   Project file (.tilr) save/load
-├── preload/       contextBridge API surface
+├── preload/       contextBridge API surface (File.path shim via webUtils)
 ├── renderer/      React 18 UI
 │   ├── components/  Toolbar, PreviewCanvas, SettingsPanel, etc.
-│   ├── hooks/     usePreviewRenderer, useCalibration
+│   ├── hooks/     usePreviewRenderer, useCalibration, usePDFPreview
+│   ├── utils/     pdfRasterize (PDF.js fallback when Sharp lacks poppler)
 │   ├── store/     Zustand + Immer state management
 │   └── ipc/       Type-safe bridge wrappers
-└── shared/        Types and pure functions shared across processes
+└── shared/        Types, validators, and pure functions shared across processes
     ├── TilingCalculator.ts   Core tiling algorithm
     ├── calibration.ts        Two-point DPI calibration
-    ├── constants.ts          Paper sizes, supported formats
-    └── ipc-types.ts          All IPC channel types
+    ├── constants.ts          Paper sizes, MM_TO_PT, supported formats
+    └── ipc-types.ts          IPC types + runtime validators
 ```
+
+## Updates
+
+BigPrint **does not auto-update**. New releases require a manual reinstall from
+the release page. If auto-update is needed for your deployment, wire
+`electron-updater` with a `publish` provider in `electron-builder` config.
 
 ## Features
 
-- Open images (JPEG, PNG, TIFF, BMP, GIF, WebP, SVG) and PDF files
+- Open images (JPEG, PNG, TIFF, BMP, GIF, WebP, AVIF, SVG) and PDF files
 - Auto-detect DPI from embedded metadata
 - Two-point on-canvas calibration for accurate scale
 - Tile across any paper size (Letter, Legal, Tabloid, A3, A4, A5)

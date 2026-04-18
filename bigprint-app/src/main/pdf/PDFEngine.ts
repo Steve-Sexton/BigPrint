@@ -3,11 +3,9 @@ import sharp from 'sharp'
 import fs from 'fs/promises'
 import type { ExportPDFParams, ExportResult, TestGridParams } from '../../shared/ipc-types'
 import { computeTileGrid, computeImageRectOnTile, type TileRect } from '../../shared/TilingCalculator'
-import { getPaperSize } from '../../shared/constants'
+import { getPaperSize, MM_TO_PT } from '../../shared/constants'
 import { applyInkSaver } from '../image/InkSaver'
 import { renderGridOnPage } from './GridRenderer'
-
-const MM_TO_PT = 2.8346456
 
 export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult> {
   try {
@@ -146,11 +144,16 @@ export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult
         // Apply ink saver if enabled
         if (params.inkSaver.enabled) {
           const inkMeta = await sharp(tileBuffer).metadata()
+          const tileWidthPx = inkMeta.width ?? tile.srcW
+          // The tile image spans paper.widthMm on the final print, so compute
+          // the buffer's pixels-per-mm from that — not from scale.dpi which is
+          // the *output* DPI in image coordinates, not tile coordinates.
+          const tilePxPerMm = tileWidthPx / paper.widthMm
           tileBuffer = await applyInkSaver({
             inputBuffer: tileBuffer,
-            widthPx: inkMeta.width ?? tile.srcW,
+            widthPx: tileWidthPx,
             heightPx: inkMeta.height ?? tile.srcH,
-            dpi: params.scale.dpi,
+            pxPerMm: tilePxPerMm,
             settings: params.inkSaver
           })
         }

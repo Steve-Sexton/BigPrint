@@ -5,8 +5,7 @@ import {
 import type { GridSettings } from '../../shared/ipc-types'
 import type { TileRect } from '../../shared/TilingCalculator'
 import { getLabelForTile } from '../../shared/TilingCalculator'
-
-const MM_TO_PT = 2.8346456
+import { MM_TO_PT } from '../../shared/constants'
 
 export interface GridRenderParams {
   page: PDFPage
@@ -321,12 +320,14 @@ function renderScaleAnnotation(params: GridRenderParams): void {
     })
   }
 
-  // Label centred above the bar
+  // Label centred above the bar using actual font metrics when available
   const label = `${spacingMm} mm`
+  const size = 5
+  const textWidthPt = labelFont ? labelFont.widthOfTextAtSize(label, size) : label.length * 1.8 * 2
   page.drawText(label, {
-    x: barX1 + spacingPt / 2 - (label.length * 1.8),   // rough centering
+    x: barX1 + spacingPt / 2 - textWidthPt / 2,
     y: barY + 2 * MM_TO_PT,
-    size: 5,
+    size,
     color: rgb(0.15, 0.15, 0.15),
     ...(labelFont ? { font: labelFont } : {})
   })

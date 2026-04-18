@@ -2,12 +2,19 @@
 import type {
   OpenFileResult, ImageMetaResult, ExportPDFParams, ExportResult,
   PrintParams, PrintResult, PrinterInfo,
-  SaveProjectParams, LoadProjectResult, TestGridParams, AppPreferences
+  SaveProjectParams, LoadProjectResult, TestGridParams, AppPreferences,
+  FileFilter
 } from '../../shared/ipc-types'
 
 export const bridge = {
   openFile: (): Promise<OpenFileResult | null> =>
     window.electronAPI.openFile(),
+
+  registerFile: (filePath: string): Promise<OpenFileResult> =>
+    window.electronAPI.registerFile(filePath),
+
+  getPathForFile: (file: File): string =>
+    window.electronAPI.getPathForFile(file),
 
   saveProject: (data: SaveProjectParams): Promise<boolean> =>
     window.electronAPI.saveProjectDialog(data),
@@ -42,7 +49,7 @@ export const bridge = {
   getPrinters: (): Promise<PrinterInfo[]> =>
     window.electronAPI.getSystemPrinters(),
 
-  showSaveDialog: (defaultName: string, filters: Array<{ name: string; extensions: string[] }>): Promise<string | null> =>
+  showSaveDialog: (defaultName: string, filters: FileFilter[]): Promise<string | null> =>
     window.electronAPI.showSaveDialog(defaultName, filters),
 
   onThemeChange: (cb: (isDark: boolean) => void) =>
