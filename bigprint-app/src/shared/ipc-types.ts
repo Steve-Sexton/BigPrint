@@ -22,19 +22,19 @@ export interface TilingSettings {
   overlapMmLeft: number
   showOverlapArea: boolean
   skipBlankPages: boolean
-  centerImage: boolean   // center the image within the assembled page grid
+  centerImage: boolean // center the image within the assembled page grid
 }
 
 export interface GridSettings {
-  showGrid: boolean           // draw square (horizontal + vertical) grid lines
-  showGridDiagonals: boolean  // draw 45° diagonal alignment lines
+  showGrid: boolean // draw square (horizontal + vertical) grid lines
+  showGridDiagonals: boolean // draw 45° diagonal alignment lines
   diagonalSpacingMm: number
   showCutMarks: boolean
   showPageLabels: boolean
   labelStyle: 'sequential' | 'grid'
-  alignToImage: boolean       // true = grid origin at image top-left; false = page top-left
-  extendBeyondImage: boolean  // extend grid into page margins past image edge
-  suppressOverImage: boolean  // only draw grid in overlap strips, not over image content
+  alignToImage: boolean // true = grid origin at image top-left; false = page top-left
+  extendBeyondImage: boolean // extend grid into page margins past image edge
+  suppressOverImage: boolean // only draw grid in overlap strips, not over image content
   showScaleAnnotation: boolean // print a reference scale bar on each page
 }
 
@@ -43,7 +43,7 @@ export interface InkSaverSettings {
   brightness: number
   gamma: number
   edgeFadeStrength: number
-  edgeFadeRadiusMm: number   // physical radius in mm (was px — converted at runtime using calibrated DPI)
+  edgeFadeRadiusMm: number // physical radius in mm (was px — converted at runtime using calibrated DPI)
 }
 
 export interface OpenFileResult {
@@ -76,9 +76,9 @@ export interface ExportPDFParams {
   grid: GridSettings
   inkSaver: InkSaverSettings
   enabledPages: boolean[][] | null
-  pdfPageIndex?: number      // for PDF source files
+  pdfPageIndex?: number // for PDF source files
   sourceBuffer?: ArrayBuffer // pre-rasterized image from renderer (used when Sharp can't read PDFs)
-  cropRect?: CropRect        // virtual crop — offsets tile extraction without modifying the file
+  cropRect?: CropRect // virtual crop — offsets tile extraction without modifying the file
 }
 
 // Standalone test-grid export (no image source — used for printer scale calibration)
@@ -108,9 +108,9 @@ export interface PrintParams {
   inkSaver: InkSaverSettings
   enabledPages: boolean[][] | null
   printerName?: string
-  pdfPageIndex?: number      // for PDF source files
+  pdfPageIndex?: number // for PDF source files
   sourceBuffer?: ArrayBuffer // pre-rasterized image from renderer
-  cropRect?: CropRect        // virtual crop
+  cropRect?: CropRect // virtual crop
 }
 
 export interface PrintResult {
@@ -146,8 +146,11 @@ export interface LoadProjectResult {
   inkSaver: InkSaverSettings
 }
 
-// The API exposed by the preload script to the renderer
-export interface ElectronAPI {
+// The API exposed by the preload script to the renderer.
+// DOM-typed members (accepting `File`, augmenting `Window`) live in the
+// renderer-side declaration file so this shared module stays DOM-free and
+// safely compiles under tsconfig.node.json.
+export interface ElectronAPICore {
   openFile: () => Promise<OpenFileResult | null>
   /** Admits an externally-supplied absolute path (drop / clipboard) to the
    *  session allowlist and returns the same shape as openFile. */
@@ -167,16 +170,6 @@ export interface ElectronAPI {
   savePreferences: (prefs: AppPreferences) => Promise<void>
   onThemeChange: (cb: (isDark: boolean) => void) => () => void
   showSaveDialog: (defaultName: string, filters: FileFilter[]) => Promise<string | null>
-  /** Resolve a dropped File to its absolute OS path. Returns '' for sandboxed
-   *  files that have no backing path. Replaces the removed File.path property
-   *  (removed from Electron 32+). */
-  getPathForFile: (file: File) => string
-}
-
-declare global {
-  interface Window {
-    electronAPI: ElectronAPI
-  }
 }
 
 // ── Runtime validators (shared between main and renderer) ────────────────────
@@ -193,8 +186,10 @@ function isObject(v: unknown): v is Record<string, unknown> {
 
 export function validateScale(v: unknown): string | null {
   if (!isObject(v)) return 'scale must be an object'
-  if (!isNumber(v['dpi']) || v['dpi'] < 1 || v['dpi'] > 9600) return `Invalid scale.dpi (${v['dpi']}) — must be 1–9600`
-  if (!isNumber(v['outputScale']) || v['outputScale'] <= 0 || v['outputScale'] > 10) return `Invalid scale.outputScale (${v['outputScale']}) — must be > 0 and ≤ 10`
+  if (!isNumber(v['dpi']) || v['dpi'] < 1 || v['dpi'] > 9600)
+    return `Invalid scale.dpi (${v['dpi']}) — must be 1–9600`
+  if (!isNumber(v['outputScale']) || v['outputScale'] <= 0 || v['outputScale'] > 10)
+    return `Invalid scale.outputScale (${v['outputScale']}) — must be > 0 and ≤ 10`
   if (!isNumber(v['printerScaleX']) || v['printerScaleX'] <= 0) return 'Invalid scale.printerScaleX'
   if (!isNumber(v['printerScaleY']) || v['printerScaleY'] <= 0) return 'Invalid scale.printerScaleY'
   return null
@@ -215,11 +210,20 @@ export function validateTiling(v: unknown): string | null {
 
 export function validateGrid(v: unknown): string | null {
   if (!isObject(v)) return 'grid must be an object'
-  for (const bk of ['showGrid', 'showGridDiagonals', 'showCutMarks', 'showPageLabels',
-                    'alignToImage', 'extendBeyondImage', 'suppressOverImage', 'showScaleAnnotation'] as const) {
+  for (const bk of [
+    'showGrid',
+    'showGridDiagonals',
+    'showCutMarks',
+    'showPageLabels',
+    'alignToImage',
+    'extendBeyondImage',
+    'suppressOverImage',
+    'showScaleAnnotation',
+  ] as const) {
     if (typeof v[bk] !== 'boolean') return `Invalid grid.${bk}`
   }
-  if (!isNumber(v['diagonalSpacingMm']) || (v['diagonalSpacingMm'] as number) <= 0) return 'Invalid grid.diagonalSpacingMm'
+  if (!isNumber(v['diagonalSpacingMm']) || (v['diagonalSpacingMm'] as number) <= 0)
+    return 'Invalid grid.diagonalSpacingMm'
   if (v['labelStyle'] !== 'sequential' && v['labelStyle'] !== 'grid') return 'Invalid grid.labelStyle'
   return null
 }
@@ -235,13 +239,22 @@ export function validateInkSaver(v: unknown): string | null {
 
 export function validateAppPreferences(data: unknown): string | null {
   if (!isObject(data)) return 'Not a JSON object'
-  const t = validateTiling(data['tiling']); if (t) return t
-  const g = validateGrid(data['grid']); if (g) return g
-  const i = validateInkSaver(data['inkSaver']); if (i) return i
-  if (data['inkSaverPreset'] !== 'light' && data['inkSaverPreset'] !== 'heavy' && data['inkSaverPreset'] !== 'custom')
+  const t = validateTiling(data['tiling'])
+  if (t) return t
+  const g = validateGrid(data['grid'])
+  if (g) return g
+  const i = validateInkSaver(data['inkSaver'])
+  if (i) return i
+  if (
+    data['inkSaverPreset'] !== 'light' &&
+    data['inkSaverPreset'] !== 'heavy' &&
+    data['inkSaverPreset'] !== 'custom'
+  )
     return 'Invalid inkSaverPreset'
-  if (!isNumber(data['printerScaleX']) || (data['printerScaleX'] as number) <= 0) return 'Invalid printerScaleX'
-  if (!isNumber(data['printerScaleY']) || (data['printerScaleY'] as number) <= 0) return 'Invalid printerScaleY'
+  if (!isNumber(data['printerScaleX']) || (data['printerScaleX'] as number) <= 0)
+    return 'Invalid printerScaleX'
+  if (!isNumber(data['printerScaleY']) || (data['printerScaleY'] as number) <= 0)
+    return 'Invalid printerScaleY'
   return null
 }
 
@@ -251,12 +264,15 @@ export function validateAppPreferences(data: unknown): string | null {
 export function validateExportParams(v: unknown, requireOutputPath = false): string | null {
   if (!isObject(v)) return 'params must be an object'
   if (requireOutputPath || v['outputPath']) {
-    if (typeof v['outputPath'] !== 'string' || v['outputPath'].includes('\0'))
-      return 'Invalid outputPath'
+    if (typeof v['outputPath'] !== 'string' || v['outputPath'].includes('\0')) return 'Invalid outputPath'
   }
-  const s = validateScale(v['scale']); if (s) return s
-  const t = validateTiling(v['tiling']); if (t) return t
-  const g = validateGrid(v['grid']); if (g) return g
-  const i = validateInkSaver(v['inkSaver']); if (i) return i
+  const s = validateScale(v['scale'])
+  if (s) return s
+  const t = validateTiling(v['tiling'])
+  if (t) return t
+  const g = validateGrid(v['grid'])
+  if (g) return g
+  const i = validateInkSaver(v['inkSaver'])
+  if (i) return i
   return null
 }

@@ -29,7 +29,7 @@ export function PageSelector() {
       overlapMmTop: tiling.overlapMmTop,
       overlapMmRight: tiling.overlapMmRight,
       overlapMmBottom: tiling.overlapMmBottom,
-      overlapMmLeft: tiling.overlapMmLeft
+      overlapMmLeft: tiling.overlapMmLeft,
     })
   }, [source, crop, scale, tiling])
 
@@ -57,14 +57,12 @@ export function PageSelector() {
 
   const handleSelectAll = () => store.setSelectedPages(null)
   const handleSelectNone = () => {
-    store.setSelectedPages(
-      Array.from({ length: rows }, () => Array.from({ length: cols }, () => false))
-    )
+    store.setSelectedPages(Array.from({ length: rows }, () => Array.from({ length: cols }, () => false)))
   }
 
   // Cell aspect ratio matches the paper orientation (portrait ≈ 3:4, landscape ≈ 4:3)
-  const cellAspect = tiling.orientation === 'portrait' ? 4 / 3 : 3 / 4  // height/width
-  const cellW = Math.min(32, Math.floor((240 - 16) / cols))  // max 240px panel, 8px margins
+  const cellAspect = tiling.orientation === 'portrait' ? 4 / 3 : 3 / 4 // height/width
+  const cellW = Math.min(32, Math.floor((240 - 16) / cols)) // max 240px panel, 8px margins
   const cellH = Math.round(cellW * cellAspect)
 
   return (
@@ -72,9 +70,7 @@ export function PageSelector() {
       {/* Summary + quick-select buttons */}
       <div className="flex items-center justify-between">
         <span className="text-xs text-gray-600 dark:text-gray-400">
-          {enabledCount === totalPages
-            ? `All ${totalPages} pages`
-            : `${enabledCount} / ${totalPages} pages`}
+          {enabledCount === totalPages ? `All ${totalPages} pages` : `${enabledCount} / ${totalPages} pages`}
         </span>
         <div className="flex gap-1">
           <button
@@ -95,10 +91,7 @@ export function PageSelector() {
       </div>
 
       {/* Tile grid */}
-      <div
-        className="flex flex-col gap-px"
-        style={{ width: cols * (cellW + 2) }}
-      >
+      <div className="flex flex-col gap-px" style={{ width: cols * (cellW + 2) }}>
         {Array.from({ length: rows }, (_, r) => (
           <div key={r} className="flex gap-px">
             {Array.from({ length: cols }, (_, c) => {

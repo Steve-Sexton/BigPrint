@@ -50,7 +50,7 @@ export async function rasterizePDFPage(
   const viewport = page.getViewport({ scale })
 
   const canvas = document.createElement('canvas')
-  canvas.width  = Math.round(viewport.width)
+  canvas.width = Math.round(viewport.width)
   canvas.height = Math.round(viewport.height)
 
   const ctx = canvas.getContext('2d')
@@ -64,7 +64,10 @@ export async function rasterizePDFPage(
   // Export canvas pixels as a PNG ArrayBuffer
   return new Promise<ArrayBuffer>((resolve, reject) => {
     canvas.toBlob(blob => {
-      if (!blob) { reject(new Error('[pdfRasterize] canvas.toBlob returned null')); return }
+      if (!blob) {
+        reject(new Error('[pdfRasterize] canvas.toBlob returned null'))
+        return
+      }
       blob.arrayBuffer().then(resolve, reject)
     }, 'image/png')
   })

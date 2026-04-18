@@ -13,7 +13,17 @@ interface Props {
   className?: string
 }
 
-export function NumericInput({ value, onChange, min, max, step = 1, unit, decimals = 0, disabled, className }: Props) {
+export function NumericInput({
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+  unit,
+  decimals = 0,
+  disabled,
+  className,
+}: Props) {
   const [text, setText] = useState(value.toFixed(decimals))
   const [focused, setFocused] = useState(false)
 
@@ -23,7 +33,10 @@ export function NumericInput({ value, onChange, min, max, step = 1, unit, decima
 
   function commit(raw: string) {
     const n = parseFloat(raw)
-    if (isNaN(n)) { setText(value.toFixed(decimals)); return }
+    if (isNaN(n)) {
+      setText(value.toFixed(decimals))
+      return
+    }
     let clamped = n
     if (min !== undefined) clamped = Math.max(min, clamped)
     if (max !== undefined) clamped = Math.min(max, clamped)
@@ -50,8 +63,13 @@ export function NumericInput({ value, onChange, min, max, step = 1, unit, decima
         )}
         onFocus={() => setFocused(true)}
         onChange={e => setText(e.target.value)}
-        onBlur={e => { setFocused(false); commit(e.target.value) }}
-        onKeyDown={e => { if (e.key === 'Enter') commit((e.target as HTMLInputElement).value) }}
+        onBlur={e => {
+          setFocused(false)
+          commit(e.target.value)
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') commit((e.target as HTMLInputElement).value)
+        }}
       />
       {unit && <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">{unit}</span>}
     </div>

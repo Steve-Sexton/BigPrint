@@ -20,13 +20,15 @@ export function Toolbar() {
       const [meta, previewDataUrl, pdfTotalPages] = await Promise.all([
         bridge.getImageMeta(result.filePath),
         bridge.getPreviewDataUrl(result.filePath, MAX_PREVIEW_SIZE_PX),
-        isPdf ? bridge.getPDFPageCount(result.filePath) : Promise.resolve(1)
+        isPdf ? bridge.getPDFPageCount(result.filePath) : Promise.resolve(1),
       ])
 
       // If Sharp couldn't read the file at all, widthPx comes back 0
       if (meta.widthPx === 0 && meta.heightPx === 0) {
         const ext = result.filePath.split('.').pop()?.toUpperCase() ?? 'this'
-        alert(`${ext} files are not supported.\n\nSupported formats: JPEG, PNG, TIFF, WebP, BMP, GIF, AVIF, SVG, PDF`)
+        alert(
+          `${ext} files are not supported.\n\nSupported formats: JPEG, PNG, TIFF, WebP, BMP, GIF, AVIF, SVG, PDF`
+        )
         return
       }
 
@@ -35,12 +37,15 @@ export function Toolbar() {
         mimeType: result.mimeType,
         naturalWidthPx: meta.widthPx,
         naturalHeightPx: meta.heightPx,
-        previewDataUrl: previewDataUrl || '',   // '' = no preview; canvas shows placeholder
+        previewDataUrl: previewDataUrl || '', // '' = no preview; canvas shows placeholder
         pdfPageIndex: 0,
-        pdfTotalPages: pdfTotalPages ?? 1
+        pdfTotalPages: pdfTotalPages ?? 1,
       })
 
-      // Auto-set DPI from embedded metadata (skip for PDF fallback value of 72)
+      // Auto-set DPI from embedded metadata. Raster-image formats carry an
+      // honest DPI; PDFs don't (the source is in points — the "DPI" the user
+      // cares about is their chosen render density, not a file property), so
+      // we leave PDFs to inherit the user's current scale.dpi instead.
       if (meta.dpiX && meta.dpiX > 10 && meta.format !== 'pdf') {
         store.setScale({ dpi: meta.dpiX })
       }
@@ -88,7 +93,7 @@ export function Toolbar() {
         enabledPages: selectedPages,
         pdfPageIndex: source.pdfPageIndex,
         sourceBuffer,
-        cropRect: crop ?? undefined
+        cropRect: crop ?? undefined,
       })
       if (result.success) {
         alert(`✅ PDF exported: ${result.pagesWritten} pages written to ${result.outputPath}`)
@@ -126,7 +131,7 @@ export function Toolbar() {
         enabledPages: selectedPages,
         pdfPageIndex: source.pdfPageIndex,
         sourceBuffer,
-        cropRect: crop ?? undefined
+        cropRect: crop ?? undefined,
       })
       if (!result.success) alert(`❌ Print failed: ${result.errorMessage}`)
     } finally {
@@ -141,18 +146,21 @@ export function Toolbar() {
       scale,
       tiling,
       grid,
-      inkSaver
+      inkSaver,
     })
   }, [source, scale, tiling, grid, inkSaver])
 
   // PDF page navigation — updates pdfPageIndex and clears the preview so
   // usePDFPreview re-renders the new page via PDF.js.
-  const handlePageChange = useCallback((delta: number) => {
-    if (!source || source.mimeType !== 'application/pdf') return
-    const newIdx = Math.max(0, Math.min(source.pdfTotalPages - 1, source.pdfPageIndex + delta))
-    if (newIdx === source.pdfPageIndex) return
-    store.setSource({ ...source, pdfPageIndex: newIdx, previewDataUrl: '' })
-  }, [source, store])
+  const handlePageChange = useCallback(
+    (delta: number) => {
+      if (!source || source.mimeType !== 'application/pdf') return
+      const newIdx = Math.max(0, Math.min(source.pdfTotalPages - 1, source.pdfPageIndex + delta))
+      if (newIdx === source.pdfPageIndex) return
+      store.setSource({ ...source, pdfPageIndex: newIdx, previewDataUrl: '' })
+    },
+    [source, store]
+  )
 
   const handleLoadProject = useCallback(async () => {
     const data = await bridge.loadProject()
@@ -170,9 +178,15 @@ export function Toolbar() {
 
   return (
     <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 select-none">
-      <button onClick={handleOpen} className={secondary}>📂 Open</button>
-      <button onClick={handleSaveProject} disabled={!source} className={secondary}>💾 Save</button>
-      <button onClick={handleLoadProject} className={secondary}>📂 Load Project</button>
+      <button onClick={handleOpen} className={secondary}>
+        📂 Open
+      </button>
+      <button onClick={handleSaveProject} disabled={!source} className={secondary}>
+        💾 Save
+      </button>
+      <button onClick={handleLoadProject} className={secondary}>
+        📂 Load Project
+      </button>
 
       {source && (
         <>
@@ -186,9 +200,9 @@ export function Toolbar() {
                 store.setCropMode('drawing')
               }
             }}
-            className={cropMode === 'drawing'
-              ? `${btn} bg-orange-500 hover:bg-orange-600 text-white`
-              : secondary}
+            className={
+              cropMode === 'drawing' ? `${btn} bg-orange-500 hover:bg-orange-600 text-white` : secondary
+            }
             title={cropMode === 'drawing' ? 'Cancel crop selection' : 'Select a crop region'}
           >
             {cropMode === 'drawing' ? '✕ Cancel Crop' : '✂ Crop'}
@@ -209,8 +223,7 @@ export function Toolbar() {
 
       {source && (
         <span className="text-xs text-gray-400 dark:text-gray-500 max-w-48 truncate">
-          {source.filePath.split(/[\\/]/).pop()}
-          {' '}
+          {source.filePath.split(/[\\/]/).pop()}{' '}
           <span className="text-gray-300 dark:text-gray-600">
             {source.naturalWidthPx}×{source.naturalHeightPx}px
           </span>
@@ -224,7 +237,9 @@ export function Toolbar() {
             disabled={source.pdfPageIndex <= 0}
             className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-40"
             title="Previous page"
-          >◀</button>
+          >
+            ◀
+          </button>
           <span className="min-w-[4rem] text-center">
             p.{source.pdfPageIndex + 1} / {source.pdfTotalPages}
           </span>
@@ -233,12 +248,18 @@ export function Toolbar() {
             disabled={source.pdfPageIndex >= source.pdfTotalPages - 1}
             className="px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-40"
             title="Next page"
-          >▶</button>
+          >
+            ▶
+          </button>
         </div>
       )}
 
-      <button onClick={handleExportPDF} disabled={!source} className={primary}>⬇ Export PDF</button>
-      <button onClick={handlePrint} disabled={!source} className={primary}>🖨 Print…</button>
+      <button onClick={handleExportPDF} disabled={!source} className={primary}>
+        ⬇ Export PDF
+      </button>
+      <button onClick={handlePrint} disabled={!source} className={primary}>
+        🖨 Print…
+      </button>
     </div>
   )
 }

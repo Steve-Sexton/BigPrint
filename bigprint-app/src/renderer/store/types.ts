@@ -1,4 +1,10 @@
-import type { ScaleSettings, TilingSettings, GridSettings, InkSaverSettings, CropRect } from '../../shared/ipc-types'
+import type {
+  ScaleSettings,
+  TilingSettings,
+  GridSettings,
+  InkSaverSettings,
+  CropRect,
+} from '../../shared/ipc-types'
 
 export type { ScaleSettings, TilingSettings, GridSettings, InkSaverSettings, CropRect }
 
@@ -39,19 +45,19 @@ export interface AppState {
   calibrationPoint2: { xPx: number; yPx: number } | null
   showCalibrationDialog: boolean
   // Crop
-  crop: CropRect | null            // committed crop (null = full image)
-  cropMode: 'idle' | 'drawing'    // active selection drag in progress
+  crop: CropRect | null // committed crop (null = full image)
+  cropMode: 'idle' | 'drawing' // active selection drag in progress
   // Anchor/current are in source-image pixel coords produced by clientToSrcCoords
   // (PreviewCanvas.tsx). Kept as plain {x,y} because the consumers do arithmetic
   // like Math.min(anchor.x, current.x) when committing the rectangle.
-  cropAnchor: { x: number; y: number } | null   // first drag corner
-  cropCurrent: { x: number; y: number } | null  // live drag corner
+  cropAnchor: { x: number; y: number } | null // first drag corner
+  cropCurrent: { x: number; y: number } | null // live drag corner
   // Measurement
   measureMode: 'idle' | 'point1' | 'point2'
   measurePoint1: { xPx: number; yPx: number } | null
   measurePoint2: { xPx: number; yPx: number } | null
   // Ink saver
-  inkSaverPreset: 'light' | 'heavy' | 'custom'  // which ink-saver mode is active
+  inkSaverPreset: 'light' | 'heavy' | 'custom' // which ink-saver mode is active
   // Page selection: null = all enabled; boolean[row][col] = per-tile override
   selectedPages: boolean[][] | null
 }

@@ -31,7 +31,7 @@ export function SettingsPanel() {
       overlapMmTop: tiling.overlapMmTop,
       overlapMmRight: tiling.overlapMmRight,
       overlapMmBottom: tiling.overlapMmBottom,
-      overlapMmLeft: tiling.overlapMmLeft
+      overlapMmLeft: tiling.overlapMmLeft,
     })
     pageInfo = `${cols}×${rows}`
     totalPages = cols * rows
@@ -42,16 +42,22 @@ export function SettingsPanel() {
     ? selectedPages.reduce((sum, row) => sum + row.filter(Boolean).length, 0)
     : totalPages
   const pagesBadge = source
-    ? (selectedPages && enabledCount < totalPages ? `${enabledCount}/${totalPages}` : pageInfo)
+    ? selectedPages && enabledCount < totalPages
+      ? `${enabledCount}/${totalPages}`
+      : pageInfo
     : ''
 
   type SectionDef = { id: Section; label: string; badge: string; onlyWhenSource?: true }
   const sections: SectionDef[] = [
-    { id: 'scale',    label: 'Scale & Calibration', badge: `${scale.dpi.toFixed(0)} DPI` },
-    { id: 'tiling',   label: 'Tiling & Paper',      badge: pageInfo ? `${pageInfo} pages` : `${tiling.paperSizeId.toUpperCase()}` },
-    { id: 'grid',     label: 'Grid & Marks',         badge: '' },
-    { id: 'inkSaver', label: 'Ink Saver',            badge: '' },
-    { id: 'pages',    label: 'Page Selection',       badge: pagesBadge, onlyWhenSource: true },
+    { id: 'scale', label: 'Scale & Calibration', badge: `${scale.dpi.toFixed(0)} DPI` },
+    {
+      id: 'tiling',
+      label: 'Tiling & Paper',
+      badge: pageInfo ? `${pageInfo} pages` : `${tiling.paperSizeId.toUpperCase()}`,
+    },
+    { id: 'grid', label: 'Grid & Marks', badge: '' },
+    { id: 'inkSaver', label: 'Ink Saver', badge: '' },
+    { id: 'pages', label: 'Page Selection', badge: pagesBadge, onlyWhenSource: true },
   ]
 
   return (
@@ -63,17 +69,19 @@ export function SettingsPanel() {
           return (
             <div key={id} className="border-b border-gray-200 dark:border-gray-700">
               <button
-                onClick={() => setOpen(prev => prev === id ? null : id)}
+                onClick={() => setOpen(prev => (prev === id ? null : id))}
                 className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               >
                 <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{label}</span>
                 <div className="flex items-center gap-1.5">
                   {badge && (
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${
-                      isSelectionActive
-                        ? 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30'
-                        : 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30'
-                    }`}>
+                    <span
+                      className={`text-xs px-1.5 py-0.5 rounded ${
+                        isSelectionActive
+                          ? 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30'
+                          : 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30'
+                      }`}
+                    >
                       {badge}
                     </span>
                   )}
@@ -82,17 +90,16 @@ export function SettingsPanel() {
               </button>
               {open === id && (
                 <div className="bg-white dark:bg-gray-850">
-                  {id === 'scale'    && <ScaleSettings />}
-                  {id === 'tiling'   && <TilingSettings />}
-                  {id === 'grid'     && <GridSettings />}
+                  {id === 'scale' && <ScaleSettings />}
+                  {id === 'tiling' && <TilingSettings />}
+                  {id === 'grid' && <GridSettings />}
                   {id === 'inkSaver' && <InkSaverSettings />}
-                  {id === 'pages'    && <PageSelector />}
+                  {id === 'pages' && <PageSelector />}
                 </div>
               )}
             </div>
           )
-        })
-      }
+        })}
     </div>
   )
 }

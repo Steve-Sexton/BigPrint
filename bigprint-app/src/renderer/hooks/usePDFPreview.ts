@@ -38,6 +38,7 @@ export function usePDFPreview(filePath: string | null, pageIndex = 0): string | 
     // page renders, rather than lingering on the previous page's image.
     setDataUrl(null)
 
+    const path = filePath
     let cancelled = false
     // Hold a reference outside render() so the cleanup callback can cancel
     // an in-flight load when the component unmounts or deps change quickly.
@@ -47,7 +48,7 @@ export function usePDFPreview(filePath: string | null, pageIndex = 0): string | 
       try {
         // Fetch raw bytes through IPC — main process reads the file,
         // so the renderer never needs a file:// URL.
-        const bytes = await bridge.getPDFBytes(filePath!)
+        const bytes = await bridge.getPDFBytes(path)
 
         // Bail immediately if the effect was already cleaned up while we
         // were waiting for the IPC round-trip (e.g. user changed pages fast).
@@ -65,7 +66,7 @@ export function usePDFPreview(filePath: string | null, pageIndex = 0): string | 
         const viewport = page.getViewport({ scale: 1.5 })
 
         const canvas = document.createElement('canvas')
-        canvas.width  = Math.round(viewport.width)
+        canvas.width = Math.round(viewport.width)
         canvas.height = Math.round(viewport.height)
 
         const ctx = canvas.getContext('2d')
@@ -89,12 +90,14 @@ export function usePDFPreview(filePath: string | null, pageIndex = 0): string | 
       }
     }
 
-    render()
+    // render() has its own try/catch so rejection paths are already handled;
+    // `void` tells the lint rule we intentionally don't await the task here.
+    void render()
     return () => {
       cancelled = true
       // Cancel any in-flight PDF.js decode so its worker task is freed.
       // Safe to call even if the promise has already settled.
-      loadingTask?.destroy()
+      void loadingTask?.destroy()
     }
   }, [filePath, pageIndex])
 

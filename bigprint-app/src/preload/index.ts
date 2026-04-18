@@ -1,10 +1,22 @@
+/// <reference lib="dom" />
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
-  ElectronAPI, ExportPDFParams, PrintParams, SaveProjectParams,
-  TestGridParams, AppPreferences, FileFilter
+  ElectronAPICore,
+  ExportPDFParams,
+  PrintParams,
+  SaveProjectParams,
+  TestGridParams,
+  AppPreferences,
+  FileFilter,
 } from '../shared/ipc-types'
 
-const api: ElectronAPI = {
+// Full API shape including the DOM-typed getPathForFile — kept local to the
+// preload so the shared ipc-types.ts stays DOM-free.
+interface PreloadAPI extends ElectronAPICore {
+  getPathForFile: (file: File) => string
+}
+
+const api: PreloadAPI = {
   openFile: () => ipcRenderer.invoke('file:open'),
   registerFile: (filePath: string) => ipcRenderer.invoke('file:register', filePath),
 
@@ -18,11 +30,9 @@ const api: ElectronAPI = {
   renderPDFPageDataUrl: (filePath: string, pageIndex: number, scale: number) =>
     ipcRenderer.invoke('pdf:renderPage', filePath, pageIndex, scale),
 
-  getPDFPageCount: (filePath: string) =>
-    ipcRenderer.invoke('pdf:getPageCount', filePath),
+  getPDFPageCount: (filePath: string) => ipcRenderer.invoke('pdf:getPageCount', filePath),
 
-  getPDFBytes: (filePath: string) =>
-    ipcRenderer.invoke('pdf:getBytes', filePath),
+  getPDFBytes: (filePath: string) => ipcRenderer.invoke('pdf:getBytes', filePath),
 
   exportPDF: (params: ExportPDFParams) => ipcRenderer.invoke('export:pdf', params),
   exportTestGrid: (params: TestGridParams) => ipcRenderer.invoke('export:testgrid', params),
@@ -38,17 +48,19 @@ const api: ElectronAPI = {
   showSaveDialog: (defaultName: string, filters: FileFilter[]) =>
     ipcRenderer.invoke('dialog:showSave', defaultName, filters),
 
-  loadPreferences: () =>
-    ipcRenderer.invoke('preferences:load'),
-  savePreferences: (prefs: AppPreferences) =>
-    ipcRenderer.invoke('preferences:save', prefs),
+  loadPreferences: () => ipcRenderer.invoke('preferences:load'),
+  savePreferences: (prefs: AppPreferences) => ipcRenderer.invoke('preferences:save', prefs),
 
   // File.path was removed in Electron 32+. Use webUtils from the preload to
   // resolve a dragged-in File to its on-disk path. Returns '' when the File
   // has no backing OS path (sandboxed picker results).
   getPathForFile: (file: File) => {
-    try { return webUtils.getPathForFile(file) } catch { return '' }
-  }
+    try {
+      return webUtils.getPathForFile(file)
+    } catch {
+      return ''
+    }
+  },
 }
 
 contextBridge.exposeInMainWorld('electronAPI', api)

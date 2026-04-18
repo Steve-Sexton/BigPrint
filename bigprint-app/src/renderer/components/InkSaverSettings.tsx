@@ -9,9 +9,9 @@ function describePreset(p: typeof INK_SAVER_LIGHT_PRESET): string {
 }
 
 const PRESET_MODES: Array<{ id: 'light' | 'heavy' | 'custom'; label: string; desc: string }> = [
-  { id: 'light',  label: '☀ Lighten areas', desc: `Mild: ${describePreset(INK_SAVER_LIGHT_PRESET)}` },
-  { id: 'heavy',  label: '🌑 Lighten more',  desc: `Strong: ${describePreset(INK_SAVER_HEAVY_PRESET)}` },
-  { id: 'custom', label: '⚙ Custom',        desc: 'Adjust sliders manually' }
+  { id: 'light', label: '☀ Lighten areas', desc: `Mild: ${describePreset(INK_SAVER_LIGHT_PRESET)}` },
+  { id: 'heavy', label: '🌑 Lighten more', desc: `Strong: ${describePreset(INK_SAVER_HEAVY_PRESET)}` },
+  { id: 'custom', label: '⚙ Custom', desc: 'Adjust sliders manually' },
 ]
 
 export function InkSaverSettings() {
@@ -60,19 +60,35 @@ export function InkSaverSettings() {
         </>
       )}
 
-      <div className={inkSaver.enabled && inkSaverPreset === 'custom' ? 'space-y-3' : 'space-y-3 opacity-40 pointer-events-none'}>
+      <div
+        className={
+          inkSaver.enabled && inkSaverPreset === 'custom'
+            ? 'space-y-3'
+            : 'space-y-3 opacity-40 pointer-events-none'
+        }
+      >
         <div>
           <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">
             Brightness <span className="text-gray-400">(100 = no change)</span>
           </label>
           <div className="flex gap-2 items-center">
             <input
-              type="range" min={10} max={200} value={inkSaver.brightness}
+              type="range"
+              min={10}
+              max={200}
+              value={inkSaver.brightness}
               onChange={e => store.setInkSaver({ brightness: Number(e.target.value) })}
               className="flex-1"
             />
-            <NumericInput value={inkSaver.brightness} onChange={v => store.setInkSaver({ brightness: v })}
-              min={10} max={200} step={1} decimals={0} className="w-16" />
+            <NumericInput
+              value={inkSaver.brightness}
+              onChange={v => store.setInkSaver({ brightness: v })}
+              min={10}
+              max={200}
+              step={1}
+              decimals={0}
+              className="w-16"
+            />
           </div>
         </div>
 
@@ -82,12 +98,22 @@ export function InkSaverSettings() {
           </label>
           <div className="flex gap-2 items-center">
             <input
-              type="range" min={100} max={300} value={inkSaver.gamma * 100}
+              type="range"
+              min={100}
+              max={300}
+              value={inkSaver.gamma * 100}
               onChange={e => store.setInkSaver({ gamma: Number(e.target.value) / 100 })}
               className="flex-1"
             />
-            <NumericInput value={inkSaver.gamma} onChange={v => store.setInkSaver({ gamma: v })}
-              min={1.0} max={3.0} step={0.05} decimals={2} className="w-16" />
+            <NumericInput
+              value={inkSaver.gamma}
+              onChange={v => store.setInkSaver({ gamma: v })}
+              min={1.0}
+              max={3.0}
+              step={0.05}
+              decimals={2}
+              className="w-16"
+            />
           </div>
         </div>
 
@@ -97,12 +123,23 @@ export function InkSaverSettings() {
           </label>
           <div className="flex gap-2 items-center">
             <input
-              type="range" min={0} max={100} value={inkSaver.edgeFadeStrength}
+              type="range"
+              min={0}
+              max={100}
+              value={inkSaver.edgeFadeStrength}
               onChange={e => store.setInkSaver({ edgeFadeStrength: Number(e.target.value) })}
               className="flex-1"
             />
-            <NumericInput value={inkSaver.edgeFadeStrength} onChange={v => store.setInkSaver({ edgeFadeStrength: v })}
-              min={0} max={100} step={1} decimals={0} unit="%" className="w-20" />
+            <NumericInput
+              value={inkSaver.edgeFadeStrength}
+              onChange={v => store.setInkSaver({ edgeFadeStrength: v })}
+              min={0}
+              max={100}
+              step={1}
+              decimals={0}
+              unit="%"
+              className="w-20"
+            />
           </div>
         </div>
 
@@ -110,8 +147,15 @@ export function InkSaverSettings() {
           <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">
             Edge-fade radius <span className="text-gray-400">(spread of edge influence)</span>
           </label>
-          <NumericInput value={inkSaver.edgeFadeRadiusMm} onChange={v => store.setInkSaver({ edgeFadeRadiusMm: v })}
-            min={0.5} max={20} step={0.5} decimals={1} unit="mm" />
+          <NumericInput
+            value={inkSaver.edgeFadeRadiusMm}
+            onChange={v => store.setInkSaver({ edgeFadeRadiusMm: v })}
+            min={0.5}
+            max={20}
+            step={0.5}
+            decimals={1}
+            unit="mm"
+          />
         </div>
       </div>
     </div>

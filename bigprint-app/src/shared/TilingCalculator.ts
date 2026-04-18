@@ -35,10 +35,18 @@ export type TilingCalcParams = {
 
 export function computeTileGrid(params: TilingCalcParams): TileGridResult {
   const {
-    imageWidthPx, imageHeightPx,
-    dpi, outputScale, printerScaleX, printerScaleY,
-    paperSizeId, orientation,
-    overlapMmTop, overlapMmRight, overlapMmBottom, overlapMmLeft
+    imageWidthPx,
+    imageHeightPx,
+    dpi,
+    outputScale,
+    printerScaleX,
+    printerScaleY,
+    paperSizeId,
+    orientation,
+    overlapMmTop,
+    overlapMmRight,
+    overlapMmBottom,
+    overlapMmLeft,
   } = params
 
   // Image physical dimensions in mm.
@@ -47,8 +55,8 @@ export function computeTileGrid(params: TilingCalcParams): TileGridResult {
   // dividing shrinks the tiled content by 2% so after the printer's own stretch
   // it lands at the correct physical size.
   const mmPerPx = (25.4 / dpi) * outputScale
-  const imageWidthMm = imageWidthPx * mmPerPx / printerScaleX
-  const imageHeightMm = imageHeightPx * mmPerPx / printerScaleY
+  const imageWidthMm = (imageWidthPx * mmPerPx) / printerScaleX
+  const imageHeightMm = (imageHeightPx * mmPerPx) / printerScaleY
 
   // Paper dimensions
   const paper = getPaperSize(paperSizeId, orientation)
@@ -72,7 +80,7 @@ export function computeTileGrid(params: TilingCalcParams): TileGridResult {
 
   const tiles: TileRect[][] = []
   for (let row = 0; row < rows; row++) {
-    tiles[row] = []
+    const tileRow: TileRect[] = []
     for (let col = 0; col < cols; col++) {
       const imageMmX = col * safeStrideX
       const imageMmY = row * safeStrideY
@@ -80,15 +88,16 @@ export function computeTileGrid(params: TilingCalcParams): TileGridResult {
       // Divide tile pixel dimensions and positions by printerScaleX/Y so that
       // each tile embeds fewer source pixels; when the printer stretches by the
       // same factor the output lands at exactly the correct physical dimensions.
-      const srcX = Math.max(0, Math.round(imageMmX / printerScaleX * pxPerMm))
-      const srcY = Math.max(0, Math.round(imageMmY / printerScaleY * pxPerMm))
-      const srcW = Math.round(widthMm / printerScaleX * pxPerMm)
-      const srcH = Math.round(heightMm / printerScaleY * pxPerMm)
+      const srcX = Math.max(0, Math.round((imageMmX / printerScaleX) * pxPerMm))
+      const srcY = Math.max(0, Math.round((imageMmY / printerScaleY) * pxPerMm))
+      const srcW = Math.round((widthMm / printerScaleX) * pxPerMm)
+      const srcH = Math.round((heightMm / printerScaleY) * pxPerMm)
 
       const isBlank = srcX >= imageWidthPx || srcY >= imageHeightPx
 
-      tiles[row][col] = { srcX, srcY, srcW, srcH, row, col, isBlank }
+      tileRow.push({ srcX, srcY, srcW, srcH, row, col, isBlank })
     }
+    tiles.push(tileRow)
   }
 
   return { cols, rows, tiles, imageWidthMm, imageHeightMm }
@@ -109,7 +118,7 @@ export function computeTileGrid(params: TilingCalcParams): TileGridResult {
  * grid), returns the full page so flags behave as no-ops.
  */
 export function computeImageRectOnTile(params: {
-  tileImageX: number    // tile's top-left in src-px coords (can be <0 or ≥imageWidthPx)
+  tileImageX: number // tile's top-left in src-px coords (can be <0 or ≥imageWidthPx)
   tileImageY: number
   tileSrcW: number
   tileSrcH: number
@@ -118,30 +127,43 @@ export function computeImageRectOnTile(params: {
   paperWidthMm: number
   paperHeightMm: number
 }): { xMm: number; yMm: number; wMm: number; hMm: number } {
-  const { tileImageX, tileImageY, tileSrcW, tileSrcH,
-          imageWidthPx, imageHeightPx,
-          paperWidthMm, paperHeightMm } = params
+  const {
+    tileImageX,
+    tileImageY,
+    tileSrcW,
+    tileSrcH,
+    imageWidthPx,
+    imageHeightPx,
+    paperWidthMm,
+    paperHeightMm,
+  } = params
 
   if (tileSrcW === 0 || tileSrcH === 0) {
     return { xMm: 0, yMm: 0, wMm: paperWidthMm, hMm: paperHeightMm }
   }
 
   const padLeft = Math.max(0, -tileImageX)
-  const padTop  = Math.max(0, -tileImageY)
+  const padTop = Math.max(0, -tileImageY)
   const cropLeft = Math.min(Math.max(0, tileImageX), imageWidthPx)
-  const cropTop  = Math.min(Math.max(0, tileImageY), imageHeightPx)
+  const cropTop = Math.min(Math.max(0, tileImageY), imageHeightPx)
   const cropW = Math.max(0, Math.min(tileSrcW - padLeft, imageWidthPx - cropLeft))
-  const cropH = Math.max(0, Math.min(tileSrcH - padTop,  imageHeightPx - cropTop))
+  const cropH = Math.max(0, Math.min(tileSrcH - padTop, imageHeightPx - cropTop))
 
   return {
-    xMm: padLeft * paperWidthMm / tileSrcW,
-    yMm: padTop  * paperHeightMm / tileSrcH,
-    wMm: cropW   * paperWidthMm / tileSrcW,
-    hMm: cropH   * paperHeightMm / tileSrcH
+    xMm: (padLeft * paperWidthMm) / tileSrcW,
+    yMm: (padTop * paperHeightMm) / tileSrcH,
+    wMm: (cropW * paperWidthMm) / tileSrcW,
+    hMm: (cropH * paperHeightMm) / tileSrcH,
   }
 }
 
-export function getLabelForTile(row: number, col: number, totalRows: number, totalCols: number, style: 'sequential' | 'grid'): string {
+export function getLabelForTile(
+  row: number,
+  col: number,
+  totalRows: number,
+  totalCols: number,
+  style: 'sequential' | 'grid'
+): string {
   if (style === 'grid') {
     // Support unlimited rows: A–Z, then AA, AB, …, AZ, BA, … (like spreadsheet columns)
     let rowLabel = ''

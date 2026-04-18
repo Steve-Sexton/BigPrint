@@ -6,7 +6,8 @@ import { getPaperSize } from '../../shared/constants'
 
 export function usePreviewRenderer(
   canvasRef: React.RefObject<HTMLCanvasElement>,
-  previewImg: HTMLImageElement | null
+  previewImg: HTMLImageElement | null,
+  resizeTick = 0
 ) {
   const state = useAppStore()
 
@@ -25,13 +26,25 @@ export function usePreviewRenderer(
 
     drawPreview(ctx, rect.width, rect.height, previewImg, state)
   }, [
-    state.source, state.zoom, state.panX, state.panY,
-    state.tiling, state.scale, state.grid,
-    state.calibrationPoint1, state.calibrationPoint2, state.calibrationMode,
-    state.crop, state.cropAnchor, state.cropCurrent,
-    state.measurePoint1, state.measurePoint2, state.measureMode,
+    state.source,
+    state.zoom,
+    state.panX,
+    state.panY,
+    state.tiling,
+    state.scale,
+    state.grid,
+    state.calibrationPoint1,
+    state.calibrationPoint2,
+    state.calibrationMode,
+    state.crop,
+    state.cropAnchor,
+    state.cropCurrent,
+    state.measurePoint1,
+    state.measurePoint2,
+    state.measureMode,
     state.selectedPages,
-    previewImg
+    previewImg,
+    resizeTick,
   ])
 }
 
@@ -126,8 +139,10 @@ function drawPreview(
 
   const pageWPx = paper.widthMm * pxPerMm * previewScale
   const pageHPx = paper.heightMm * pxPerMm * previewScale
-  const strideXPx = (paper.widthMm - state.tiling.overlapMmLeft - state.tiling.overlapMmRight) * pxPerMm * previewScale
-  const strideYPx = (paper.heightMm - state.tiling.overlapMmTop - state.tiling.overlapMmBottom) * pxPerMm * previewScale
+  const strideXPx =
+    (paper.widthMm - state.tiling.overlapMmLeft - state.tiling.overlapMmRight) * pxPerMm * previewScale
+  const strideYPx =
+    (paper.heightMm - state.tiling.overlapMmTop - state.tiling.overlapMmBottom) * pxPerMm * previewScale
 
   // When a crop is committed, draw the grid over the crop region
   const gridOriginX = state.crop ? state.crop.srcX * previewScale : 0
@@ -152,7 +167,7 @@ function drawPreview(
     overlapMmTop: state.tiling.overlapMmTop,
     overlapMmRight: state.tiling.overlapMmRight,
     overlapMmBottom: state.tiling.overlapMmBottom,
-    overlapMmLeft: state.tiling.overlapMmLeft
+    overlapMmLeft: state.tiling.overlapMmLeft,
   })
 
   // ── Center-image offset in preview pixels (mirrors PDFEngine centering logic) ──
@@ -168,10 +183,10 @@ function drawPreview(
     // printerScaleX/Y is a compensation factor (measured ÷ expected); dividing
     // shrinks the logical image size so the centering offset matches what the
     // PDF engine actually renders.
-    const imageWMm = imageSrcW * mmPerPx / state.scale.printerScaleX
-    const imageHMm = imageSrcH * mmPerPx / state.scale.printerScaleY
-    cOffXPrev = (assembledWMm - imageWMm) / 2 * pxPerMm * previewScale
-    cOffYPrev = (assembledHMm - imageHMm) / 2 * pxPerMm * previewScale
+    const imageWMm = (imageSrcW * mmPerPx) / state.scale.printerScaleX
+    const imageHMm = (imageSrcH * mmPerPx) / state.scale.printerScaleY
+    cOffXPrev = ((assembledWMm - imageWMm) / 2) * pxPerMm * previewScale
+    cOffYPrev = ((assembledHMm - imageHMm) / 2) * pxPerMm * previewScale
   }
 
   const gridSpacingPx = state.grid.diagonalSpacingMm * pxPerMm * previewScale
@@ -192,10 +207,10 @@ function drawPreview(
       for (let col = 0; col < cols; col++) {
         const tx = gridOriginX - cOffXPrev + col * strideXPx
         const ty = gridOriginY - cOffYPrev + row * strideYPx
-        if (col > 0 && oLpx > 0)            ctx.fillRect(tx, ty, oLpx, pageHPx)
-        if (col < cols - 1 && oRpx > 0)     ctx.fillRect(tx + pageWPx - oRpx, ty, oRpx, pageHPx)
-        if (row > 0 && oTpx > 0)            ctx.fillRect(tx, ty, pageWPx, oTpx)
-        if (row < rows - 1 && oBpx > 0)     ctx.fillRect(tx, ty + pageHPx - oBpx, pageWPx, oBpx)
+        if (col > 0 && oLpx > 0) ctx.fillRect(tx, ty, oLpx, pageHPx)
+        if (col < cols - 1 && oRpx > 0) ctx.fillRect(tx + pageWPx - oRpx, ty, oRpx, pageHPx)
+        if (row > 0 && oTpx > 0) ctx.fillRect(tx, ty, pageWPx, oTpx)
+        if (row < rows - 1 && oBpx > 0) ctx.fillRect(tx, ty + pageHPx - oBpx, pageWPx, oBpx)
       }
     }
     ctx.restore()
@@ -236,8 +251,10 @@ function drawPreview(
       for (let col = 0; col < cols; col++) {
         const tx = gridOriginX - cOffXPrev + col * strideXPx
         const ty = gridOriginY - cOffYPrev + row * strideYPx
-        if (state.grid.showGrid)          drawHorizontalGridPreview(ctx, tx, ty, pageWPx, pageHPx, gridSpacingPx, state.grid.alignToImage)
-        if (state.grid.showGridDiagonals) drawDiagonalGridPreview(ctx, tx, ty, pageWPx, pageHPx, gridSpacingPx, state.grid.alignToImage)
+        if (state.grid.showGrid)
+          drawHorizontalGridPreview(ctx, tx, ty, pageWPx, pageHPx, gridSpacingPx, state.grid.alignToImage)
+        if (state.grid.showGridDiagonals)
+          drawDiagonalGridPreview(ctx, tx, ty, pageWPx, pageHPx, gridSpacingPx, state.grid.alignToImage)
       }
     }
     ctx.restore()
@@ -314,10 +331,22 @@ function drawPreview(
 
   // ── Measure points and line ───────────────────────────────────────────────
   if (state.measurePoint1) {
-    drawCrosshair(ctx, state.measurePoint1.xPx * previewScale, state.measurePoint1.yPx * previewScale, '#9333EA', state.zoom)
+    drawCrosshair(
+      ctx,
+      state.measurePoint1.xPx * previewScale,
+      state.measurePoint1.yPx * previewScale,
+      '#9333EA',
+      state.zoom
+    )
   }
   if (state.measurePoint2) {
-    drawCrosshair(ctx, state.measurePoint2.xPx * previewScale, state.measurePoint2.yPx * previewScale, '#9333EA', state.zoom)
+    drawCrosshair(
+      ctx,
+      state.measurePoint2.xPx * previewScale,
+      state.measurePoint2.yPx * previewScale,
+      '#9333EA',
+      state.zoom
+    )
     if (state.measurePoint1) {
       const x1 = state.measurePoint1.xPx * previewScale
       const y1 = state.measurePoint1.yPx * previewScale
@@ -373,7 +402,10 @@ function drawPreview(
  */
 function drawHorizontalGridPreview(
   ctx: CanvasRenderingContext2D,
-  tx: number, ty: number, w: number, h: number,
+  tx: number,
+  ty: number,
+  w: number,
+  h: number,
   spacingPx: number,
   alignToImage: boolean
 ) {
@@ -381,17 +413,13 @@ function drawHorizontalGridPreview(
 
   // Phase offsets ensure lines align to the image origin (0,0) when alignToImage=true.
   // The extra +spacingPx before modulo guards against negative tx/ty (centering offset).
-  const phaseX = alignToImage
-    ? ((spacingPx - ((tx % spacingPx + spacingPx) % spacingPx)) % spacingPx)
-    : 0
-  const phaseY = alignToImage
-    ? ((spacingPx - ((ty % spacingPx + spacingPx) % spacingPx)) % spacingPx)
-    : 0
+  const phaseX = alignToImage ? (spacingPx - (((tx % spacingPx) + spacingPx) % spacingPx)) % spacingPx : 0
+  const phaseY = alignToImage ? (spacingPx - (((ty % spacingPx) + spacingPx) % spacingPx)) % spacingPx : 0
 
   ctx.beginPath()
   // Horizontal lines
   for (let y = phaseY; y <= h; y += spacingPx) {
-    ctx.moveTo(tx,     ty + y)
+    ctx.moveTo(tx, ty + y)
     ctx.lineTo(tx + w, ty + y)
   }
   // Vertical lines
@@ -410,7 +438,10 @@ function drawHorizontalGridPreview(
  */
 function drawDiagonalGridPreview(
   ctx: CanvasRenderingContext2D,
-  tx: number, ty: number, w: number, h: number,
+  tx: number,
+  ty: number,
+  w: number,
+  h: number,
   spacingPx: number,
   alignToImage: boolean
 ) {
@@ -427,9 +458,7 @@ function drawDiagonalGridPreview(
   for (const slope of [1, -1] as const) {
     // Phase center: when alignToImage, use tile absolute coords so the pattern
     // is seamlessly continuous; when not aligned, start fresh from tile's (0,0).
-    const cCenter = alignToImage
-      ? (slope === 1 ? ty - tx : ty + tx)
-      : 0
+    const cCenter = alignToImage ? (slope === 1 ? ty - tx : ty + tx) : 0
 
     const cStart = Math.floor((cCenter - diag * 1.5) / spacingC) * spacingC
     const cEnd = cCenter + diag * 1.5
@@ -438,14 +467,14 @@ function drawDiagonalGridPreview(
       if (slope === 1) {
         // alignToImage=true: formula uses tx for y so cCenter=(ty-tx) compensates → passes through (tx,ty).
         // alignToImage=false: cCenter=0, so use ty directly as the y-anchor for the tile origin.
-        const y1 = alignToImage ? tx + c       : ty + c
-        const y2 = alignToImage ? tx + w + c   : ty + w + c
-        ctx.moveTo(tx,     y1)
+        const y1 = alignToImage ? tx + c : ty + c
+        const y2 = alignToImage ? tx + w + c : ty + w + c
+        ctx.moveTo(tx, y1)
         ctx.lineTo(tx + w, y2)
       } else {
-        const y1 = alignToImage ? -tx + c         : ty + c
-        const y2 = alignToImage ? -(tx + w) + c   : ty - w + c
-        ctx.moveTo(tx,     y1)
+        const y1 = alignToImage ? -tx + c : ty + c
+        const y2 = alignToImage ? -(tx + w) + c : ty - w + c
+        ctx.moveTo(tx, y1)
         ctx.lineTo(tx + w, y2)
       }
     }
@@ -459,8 +488,10 @@ function drawDiagonalGridPreview(
  */
 function drawCalibrationArrow(
   ctx: CanvasRenderingContext2D,
-  x1: number, y1: number,
-  x2: number, y2: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
   zoom: number
 ) {
   const headLen = 12 / zoom

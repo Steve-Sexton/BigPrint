@@ -8,11 +8,21 @@ type OverlapUnit = 'mm' | 'cm' | 'in'
 const UNIT_LABELS: Record<OverlapUnit, string> = { mm: 'mm', cm: 'cm', in: 'in' }
 const TO_MM: Record<OverlapUnit, number> = { mm: 1, cm: 10, in: 25.4 }
 
-function toUnit(mm: number, unit: OverlapUnit) { return mm / TO_MM[unit] }
-function fromUnit(v: number, unit: OverlapUnit) { return v * TO_MM[unit] }
-function unitDecimals(unit: OverlapUnit) { return unit === 'mm' ? 0 : unit === 'cm' ? 1 : 2 }
-function unitMax(unit: OverlapUnit) { return unit === 'mm' ? 50 : unit === 'cm' ? 5 : 2 }
-function unitStep(unit: OverlapUnit) { return unit === 'mm' ? 1 : unit === 'cm' ? 0.1 : 0.05 }
+function toUnit(mm: number, unit: OverlapUnit) {
+  return mm / TO_MM[unit]
+}
+function fromUnit(v: number, unit: OverlapUnit) {
+  return v * TO_MM[unit]
+}
+function unitDecimals(unit: OverlapUnit) {
+  return unit === 'mm' ? 0 : unit === 'cm' ? 1 : 2
+}
+function unitMax(unit: OverlapUnit) {
+  return unit === 'mm' ? 50 : unit === 'cm' ? 5 : 2
+}
+function unitStep(unit: OverlapUnit) {
+  return unit === 'mm' ? 1 : unit === 'cm' ? 0.1 : 0.05
+}
 
 export function TilingSettings() {
   const store = useAppStore()
@@ -38,7 +48,9 @@ export function TilingSettings() {
             className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-2 py-1 text-xs"
           >
             {PAPER_SIZES.map(p => (
-              <option key={p.id} value={p.id}>{p.label}</option>
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
             ))}
           </select>
         </div>
@@ -65,9 +77,7 @@ export function TilingSettings() {
       <div>
         {/* Header row: label + unit selector */}
         <div className="flex items-center justify-between mb-1">
-          <label className="text-xs text-gray-600 dark:text-gray-400">
-            Overlap — per edge
-          </label>
+          <label className="text-xs text-gray-600 dark:text-gray-400">Overlap — per edge</label>
           <div className="flex rounded border border-gray-300 dark:border-gray-600 overflow-hidden">
             {(['mm', 'cm', 'in'] as OverlapUnit[]).map(u => (
               <button
@@ -89,25 +99,37 @@ export function TilingSettings() {
           <NumericInput
             value={toUnit(tiling.overlapMmTop, unit)}
             onChange={v => store.setTiling({ overlapMmTop: fromUnit(v, unit) })}
-            min={0} max={unitMax(unit)} step={unitStep(unit)} decimals={unitDecimals(unit)}
+            min={0}
+            max={unitMax(unit)}
+            step={unitStep(unit)}
+            decimals={unitDecimals(unit)}
           />
           <div />
           <NumericInput
             value={toUnit(tiling.overlapMmLeft, unit)}
             onChange={v => store.setTiling({ overlapMmLeft: fromUnit(v, unit) })}
-            min={0} max={unitMax(unit)} step={unitStep(unit)} decimals={unitDecimals(unit)}
+            min={0}
+            max={unitMax(unit)}
+            step={unitStep(unit)}
+            decimals={unitDecimals(unit)}
           />
           <div className="flex items-center justify-center text-xs text-gray-400">all</div>
           <NumericInput
             value={toUnit(tiling.overlapMmRight, unit)}
             onChange={v => store.setTiling({ overlapMmRight: fromUnit(v, unit) })}
-            min={0} max={unitMax(unit)} step={unitStep(unit)} decimals={unitDecimals(unit)}
+            min={0}
+            max={unitMax(unit)}
+            step={unitStep(unit)}
+            decimals={unitDecimals(unit)}
           />
           <div />
           <NumericInput
             value={toUnit(tiling.overlapMmBottom, unit)}
             onChange={v => store.setTiling({ overlapMmBottom: fromUnit(v, unit) })}
-            min={0} max={unitMax(unit)} step={unitStep(unit)} decimals={unitDecimals(unit)}
+            min={0}
+            max={unitMax(unit)}
+            step={unitStep(unit)}
+            decimals={unitDecimals(unit)}
           />
           <div />
         </div>
@@ -123,27 +145,39 @@ export function TilingSettings() {
       </div>
 
       <div className="flex items-center gap-2">
-        <input type="checkbox" id="skipBlanks" checked={tiling.skipBlankPages}
+        <input
+          type="checkbox"
+          id="skipBlanks"
+          checked={tiling.skipBlankPages}
           onChange={e => store.setTiling({ skipBlankPages: e.target.checked })}
-          className="rounded" />
+          className="rounded"
+        />
         <label htmlFor="skipBlanks" className="text-xs text-gray-700 dark:text-gray-300">
           Skip blank pages
         </label>
       </div>
 
       <div className="flex items-center gap-2">
-        <input type="checkbox" id="showOverlap" checked={tiling.showOverlapArea}
+        <input
+          type="checkbox"
+          id="showOverlap"
+          checked={tiling.showOverlapArea}
           onChange={e => store.setTiling({ showOverlapArea: e.target.checked })}
-          className="rounded" />
+          className="rounded"
+        />
         <label htmlFor="showOverlap" className="text-xs text-gray-700 dark:text-gray-300">
           Print overlap area background
         </label>
       </div>
 
       <div className="flex items-center gap-2">
-        <input type="checkbox" id="centerImage" checked={tiling.centerImage}
+        <input
+          type="checkbox"
+          id="centerImage"
+          checked={tiling.centerImage}
           onChange={e => store.setTiling({ centerImage: e.target.checked })}
-          className="rounded" />
+          className="rounded"
+        />
         <label htmlFor="centerImage" className="text-xs text-gray-700 dark:text-gray-300">
           Center image on assembled pages
         </label>

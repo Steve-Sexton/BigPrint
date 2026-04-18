@@ -89,7 +89,7 @@ the release page. If auto-update is needed for your deployment, wire
 ## Features
 
 - Open images (JPEG, PNG, TIFF, BMP, GIF, WebP, AVIF, SVG) and PDF files
-- Auto-detect DPI from embedded metadata
+- Auto-detect DPI from raster-image metadata (PDFs inherit the current DPI — points are the PDF's native unit, so pick the DPI you want to render at)
 - Two-point on-canvas calibration for accurate scale
 - Tile across any paper size (Letter, Legal, Tabloid, A3, A4, A5)
 - Configurable overlap on all four edges

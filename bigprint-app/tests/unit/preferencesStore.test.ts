@@ -56,22 +56,30 @@ describe('PreferencesStore', () => {
     expect(files.every(f => !f.endsWith('.tmp'))).toBe(true)
   })
 
-  it('load() returns null and preserves corrupt JSON on parse failure', async () => {
+  it('load() moves (not copies) corrupt JSON aside so repeated loads do not proliferate backups', async () => {
     const target = path.join(state.tmpRoot, 'preferences.json')
     await fs.writeFile(target, '{ "tiling": ', 'utf-8')
-    const result = await PreferencesStore.load()
-    expect(result).toBeNull()
+
+    // Three consecutive loads should produce exactly one backup total — not
+    // three. The bad file is renamed on first encounter; later loads see no
+    // preferences.json at all and return null cleanly.
+    expect(await PreferencesStore.load()).toBeNull()
+    expect(await PreferencesStore.load()).toBeNull()
+    expect(await PreferencesStore.load()).toBeNull()
+
     const files = await fs.readdir(state.tmpRoot)
-    expect(files.some(f => f.startsWith('preferences.json.corrupt-'))).toBe(true)
+    expect(files).not.toContain('preferences.json')
+    const backups = files.filter(f => f.startsWith('preferences.json.corrupt-'))
+    expect(backups.length).toBe(1)
   })
 
-  it('load() returns null and preserves the file on validation failure', async () => {
+  it('load() preserves the file on validation failure (moved aside, not copied)', async () => {
     const target = path.join(state.tmpRoot, 'preferences.json')
-    // Valid JSON but missing required fields
     await fs.writeFile(target, JSON.stringify({ foo: 'bar' }), 'utf-8')
     const result = await PreferencesStore.load()
     expect(result).toBeNull()
     const files = await fs.readdir(state.tmpRoot)
+    expect(files).not.toContain('preferences.json')
     expect(files.some(f => f.startsWith('preferences.json.corrupt-'))).toBe(true)
   })
 
@@ -81,5 +89,14 @@ describe('PreferencesStore', () => {
     // File should not exist — the save was a no-op
     const files = await fs.readdir(state.tmpRoot)
     expect(files).not.toContain('preferences.json')
+  })
+
+  it('save() propagates filesystem errors and leaves no orphan .tmp behind', async () => {
+    const renameSpy = vi.spyOn(fs, 'rename').mockRejectedValueOnce(new Error('EACCES'))
+    await expect(PreferencesStore.save(validPrefs)).rejects.toThrow(/EACCES/)
+    renameSpy.mockRestore()
+
+    const files = await fs.readdir(state.tmpRoot)
+    expect(files.every(f => !f.endsWith('.tmp'))).toBe(true)
   })
 })
