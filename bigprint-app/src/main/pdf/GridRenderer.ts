@@ -1,6 +1,14 @@
 import {
-  PDFPage, PDFFont, rgb, LineCapStyle,
-  pushGraphicsState, popGraphicsState, rectangle, clip, clipEvenOdd, endPath
+  PDFPage,
+  PDFFont,
+  rgb,
+  LineCapStyle,
+  pushGraphicsState,
+  popGraphicsState,
+  rectangle,
+  clip,
+  clipEvenOdd,
+  endPath,
 } from 'pdf-lib'
 import type { GridSettings } from '../../shared/ipc-types'
 import type { TileRect } from '../../shared/TilingCalculator'
@@ -18,7 +26,7 @@ export interface GridRenderParams {
   col: number
   totalRows: number
   totalCols: number
-  labelFont?: PDFFont   // must be embedded in the parent PDFDocument before use
+  labelFont: PDFFont // must be embedded in the parent PDFDocument before use
   /** Image area on this tile in page-mm-from-top-left.  Required when
    *  extendBeyondImage=false or suppressOverImage=true (otherwise ignored). */
   imageRectMm?: { xMm: number; yMm: number; wMm: number; hMm: number }
@@ -57,7 +65,7 @@ export function renderGridOnPage(params: GridRenderParams): void {
  */
 function pushGridClip(params: GridRenderParams): boolean {
   const { page, grid, imageRectMm, paperWidthMm, paperHeightMm } = params
-  const clipToImage     = !grid.extendBeyondImage
+  const clipToImage = !grid.extendBeyondImage
   const clipAwayFromImg = grid.suppressOverImage
   if (!clipToImage && !clipAwayFromImg) return false
   if (!imageRectMm) return false
@@ -67,12 +75,7 @@ function pushGridClip(params: GridRenderParams): boolean {
   if (imageRectMm.wMm <= 0 || imageRectMm.hMm <= 0) {
     if (clipAwayFromImg) return false
     // clipToImage with zero area: push a degenerate clip so nothing draws
-    page.pushOperators(
-      pushGraphicsState(),
-      rectangle(0, 0, 0, 0),
-      clip(),
-      endPath()
-    )
+    page.pushOperators(pushGraphicsState(), rectangle(0, 0, 0, 0), clip(), endPath())
     return true
   }
 
@@ -92,11 +95,7 @@ function pushGridClip(params: GridRenderParams): boolean {
       endPath()
     )
   } else {
-    page.pushOperators(
-      rectangle(imgXpt, imgYpt, imgWpt, imgHpt),
-      clip(),
-      endPath()
-    )
+    page.pushOperators(rectangle(imgXpt, imgYpt, imgWpt, imgHpt), clip(), endPath())
   }
   return true
 }
@@ -109,42 +108,54 @@ function pushGridClip(params: GridRenderParams): boolean {
 function renderOverlapShading(params: GridRenderParams): void {
   const { page, paperWidthMm, paperHeightMm, overlapMm, row, col, totalRows, totalCols } = params
   if (!overlapMm) return
-  const shade = rgb(1.0, 0.90, 0.55)  // soft amber
+  const shade = rgb(1.0, 0.9, 0.55) // soft amber
   const op = 0.25
   const pageWpt = paperWidthMm * MM_TO_PT
   const pageHpt = paperHeightMm * MM_TO_PT
 
   if (col > 0 && overlapMm.left > 0) {
     page.drawRectangle({
-      x: 0, y: 0,
+      x: 0,
+      y: 0,
       width: overlapMm.left * MM_TO_PT,
       height: pageHpt,
-      color: shade, opacity: op, borderWidth: 0
+      color: shade,
+      opacity: op,
+      borderWidth: 0,
     })
   }
   if (col < totalCols - 1 && overlapMm.right > 0) {
     page.drawRectangle({
-      x: pageWpt - overlapMm.right * MM_TO_PT, y: 0,
+      x: pageWpt - overlapMm.right * MM_TO_PT,
+      y: 0,
       width: overlapMm.right * MM_TO_PT,
       height: pageHpt,
-      color: shade, opacity: op, borderWidth: 0
+      color: shade,
+      opacity: op,
+      borderWidth: 0,
     })
   }
   if (row > 0 && overlapMm.top > 0) {
     // In pdf-lib coords the top strip is at the top of the page (high y).
     page.drawRectangle({
-      x: 0, y: pageHpt - overlapMm.top * MM_TO_PT,
+      x: 0,
+      y: pageHpt - overlapMm.top * MM_TO_PT,
       width: pageWpt,
       height: overlapMm.top * MM_TO_PT,
-      color: shade, opacity: op, borderWidth: 0
+      color: shade,
+      opacity: op,
+      borderWidth: 0,
     })
   }
   if (row < totalRows - 1 && overlapMm.bottom > 0) {
     page.drawRectangle({
-      x: 0, y: 0,
+      x: 0,
+      y: 0,
       width: pageWpt,
       height: overlapMm.bottom * MM_TO_PT,
-      color: shade, opacity: op, borderWidth: 0
+      color: shade,
+      opacity: op,
+      borderWidth: 0,
     })
   }
 }
@@ -157,9 +168,6 @@ function renderDiagonalGrid(params: GridRenderParams): void {
   // every H/V grid corner rather than every other one.
   const spacingC = spacingMm
 
-  const pageWidthPt = paperWidthMm * MM_TO_PT
-  const pageHeightPt = paperHeightMm * MM_TO_PT
-
   // Grid origin: when alignToImage=true the diagonal pattern is continuous across
   // all tiles (aligned to the image coordinate system). When false, each page
   // gets its own fresh grid (aligned to page top-left).
@@ -169,9 +177,7 @@ function renderDiagonalGrid(params: GridRenderParams): void {
   const pageDiagonalMm = Math.sqrt(paperWidthMm ** 2 + paperHeightMm ** 2)
 
   for (const slope of [1, -1] as const) {
-    const cCenter = slope === 1
-      ? tileOriginYMm - tileOriginXMm
-      : tileOriginYMm + tileOriginXMm
+    const cCenter = slope === 1 ? tileOriginYMm - tileOriginXMm : tileOriginYMm + tileOriginXMm
 
     const cMin = cCenter - pageDiagonalMm * 1.5
     const cMax = cCenter + pageDiagonalMm * 1.5
@@ -208,7 +214,7 @@ function renderDiagonalGrid(params: GridRenderParams): void {
         thickness: 0.4,
         color: rgb(0.25, 0.25, 0.25),
         lineCap: LineCapStyle.Butt,
-        opacity: 0.6
+        opacity: 0.6,
       })
     }
   }
@@ -226,8 +232,8 @@ function renderHorizontalGrid(params: GridRenderParams): void {
   const tileOriginYMm = grid.alignToImage ? tile.srcY * mmPerPx : 0
 
   // First line position (relative to page top-left) that keeps the global grid aligned
-  const phaseXmm = ((spacingMm - (tileOriginXMm % spacingMm + spacingMm)) % spacingMm)
-  const phaseYmm = ((spacingMm - (tileOriginYMm % spacingMm + spacingMm)) % spacingMm)
+  const phaseXmm = (spacingMm - ((tileOriginXMm % spacingMm) + spacingMm)) % spacingMm
+  const phaseYmm = (spacingMm - ((tileOriginYMm % spacingMm) + spacingMm)) % spacingMm
 
   const lineColor = rgb(0.25, 0.25, 0.25)
 
@@ -254,15 +260,35 @@ function renderCutMarks(params: GridRenderParams): void {
 
   // Top-left
   page.drawLine({ start: { x: gapPt, y: h }, end: { x: gapPt + markPt, y: h }, thickness: t, color: c })
-  page.drawLine({ start: { x: 0, y: h - gapPt }, end: { x: 0, y: h - gapPt - markPt }, thickness: t, color: c })
+  page.drawLine({
+    start: { x: 0, y: h - gapPt },
+    end: { x: 0, y: h - gapPt - markPt },
+    thickness: t,
+    color: c,
+  })
   // Top-right
-  page.drawLine({ start: { x: w - gapPt, y: h }, end: { x: w - gapPt - markPt, y: h }, thickness: t, color: c })
-  page.drawLine({ start: { x: w, y: h - gapPt }, end: { x: w, y: h - gapPt - markPt }, thickness: t, color: c })
+  page.drawLine({
+    start: { x: w - gapPt, y: h },
+    end: { x: w - gapPt - markPt, y: h },
+    thickness: t,
+    color: c,
+  })
+  page.drawLine({
+    start: { x: w, y: h - gapPt },
+    end: { x: w, y: h - gapPt - markPt },
+    thickness: t,
+    color: c,
+  })
   // Bottom-left
   page.drawLine({ start: { x: gapPt, y: 0 }, end: { x: gapPt + markPt, y: 0 }, thickness: t, color: c })
   page.drawLine({ start: { x: 0, y: gapPt }, end: { x: 0, y: gapPt + markPt }, thickness: t, color: c })
   // Bottom-right
-  page.drawLine({ start: { x: w - gapPt, y: 0 }, end: { x: w - gapPt - markPt, y: 0 }, thickness: t, color: c })
+  page.drawLine({
+    start: { x: w - gapPt, y: 0 },
+    end: { x: w - gapPt - markPt, y: 0 },
+    thickness: t,
+    color: c,
+  })
   page.drawLine({ start: { x: w, y: gapPt }, end: { x: w, y: gapPt + markPt }, thickness: t, color: c })
 }
 
@@ -272,14 +298,13 @@ function renderPageLabel(params: GridRenderParams): void {
   const marginPt = 3 * MM_TO_PT
 
   // pdf-lib silently drops drawText when no font is embedded in the document.
-  // Always pass the pre-embedded labelFont so the text renders reliably across
-  // all PDF viewers and printers.
+  // labelFont is required so text renders reliably across all PDF viewers.
   page.drawText(label, {
     x: marginPt,
     y: marginPt,
     size: 8,
     color: rgb(0.3, 0.3, 0.3),
-    ...(labelFont ? { font: labelFont } : {})
+    font: labelFont,
   })
 }
 
@@ -291,7 +316,7 @@ function renderPageLabel(params: GridRenderParams): void {
  * the printer-scale calibration is correct.
  */
 function renderScaleAnnotation(params: GridRenderParams): void {
-  const { page, grid, paperWidthMm, paperHeightMm, labelFont } = params
+  const { page, grid, paperWidthMm, labelFont } = params
   const spacingMm = grid.diagonalSpacingMm
   const spacingPt = spacingMm * MM_TO_PT
 
@@ -306,7 +331,7 @@ function renderScaleAnnotation(params: GridRenderParams): void {
     start: { x: barX1, y: barY },
     end: { x: barX2, y: barY },
     thickness: 0.6,
-    color: rgb(0.15, 0.15, 0.15)
+    color: rgb(0.15, 0.15, 0.15),
   })
 
   // End ticks
@@ -316,19 +341,19 @@ function renderScaleAnnotation(params: GridRenderParams): void {
       start: { x, y: barY - tickH / 2 },
       end: { x, y: barY + tickH / 2 },
       thickness: 0.6,
-      color: rgb(0.15, 0.15, 0.15)
+      color: rgb(0.15, 0.15, 0.15),
     })
   }
 
-  // Label centred above the bar using actual font metrics when available
+  // Label centred above the bar using actual font metrics
   const label = `${spacingMm} mm`
   const size = 5
-  const textWidthPt = labelFont ? labelFont.widthOfTextAtSize(label, size) : label.length * 1.8 * 2
+  const textWidthPt = labelFont.widthOfTextAtSize(label, size)
   page.drawText(label, {
     x: barX1 + spacingPt / 2 - textWidthPt / 2,
     y: barY + 2 * MM_TO_PT,
     size,
     color: rgb(0.15, 0.15, 0.15),
-    ...(labelFont ? { font: labelFont } : {})
+    font: labelFont,
   })
 }

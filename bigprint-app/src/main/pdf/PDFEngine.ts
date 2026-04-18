@@ -56,7 +56,7 @@ export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult
       overlapMmTop: params.tiling.overlapMmTop,
       overlapMmRight: params.tiling.overlapMmRight,
       overlapMmBottom: params.tiling.overlapMmBottom,
-      overlapMmLeft: params.tiling.overlapMmLeft
+      overlapMmLeft: params.tiling.overlapMmLeft,
     })
 
     const mmPerPx = (25.4 / params.scale.dpi) * params.scale.outputScale
@@ -68,21 +68,31 @@ export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult
     let centerOffsetXPx = 0
     let centerOffsetYPx = 0
     if (params.tiling.centerImage) {
-      const strideXMm = Math.max(paper.widthMm - params.tiling.overlapMmLeft - params.tiling.overlapMmRight, 1)
-      const strideYMm = Math.max(paper.heightMm - params.tiling.overlapMmTop - params.tiling.overlapMmBottom, 1)
-      const assembledWidthMm  = (cols - 1) * strideXMm + paper.widthMm
+      const strideXMm = Math.max(
+        paper.widthMm - params.tiling.overlapMmLeft - params.tiling.overlapMmRight,
+        1
+      )
+      const strideYMm = Math.max(
+        paper.heightMm - params.tiling.overlapMmTop - params.tiling.overlapMmBottom,
+        1
+      )
+      const assembledWidthMm = (cols - 1) * strideXMm + paper.widthMm
       const assembledHeightMm = (rows - 1) * strideYMm + paper.heightMm
-      const imageWidthMm  = imageWidthPx  * mmPerPx / params.scale.printerScaleX
-      const imageHeightMm = imageHeightPx * mmPerPx / params.scale.printerScaleY
-      centerOffsetXPx = Math.round((assembledWidthMm - imageWidthMm) / 2 * pxPerMm)
-      centerOffsetYPx = Math.round((assembledHeightMm - imageHeightMm) / 2 * pxPerMm)
+      const imageWidthMm = (imageWidthPx * mmPerPx) / params.scale.printerScaleX
+      const imageHeightMm = (imageHeightPx * mmPerPx) / params.scale.printerScaleY
+      centerOffsetXPx = Math.round(((assembledWidthMm - imageWidthMm) / 2) * pxPerMm)
+      centerOffsetYPx = Math.round(((assembledHeightMm - imageHeightMm) / 2) * pxPerMm)
     }
 
     let pagesWritten = 0
 
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
-        const tile = tiles[row][col]
+        const tile = tiles[row]?.[col]
+        // computeTileGrid fills every cell, so this is defensive — but under
+        // noUncheckedIndexedAccess TS demands the guard, and if a future
+        // refactor ever violates the invariant we'd rather skip than crash.
+        if (!tile) continue
 
         if (params.enabledPages && !params.enabledPages[row]?.[col]) continue
 
@@ -94,7 +104,7 @@ export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult
 
         // Leading whitespace (when tile starts before the image)
         const padLeft = Math.max(0, -tileImageX)
-        const padTop  = Math.max(0, -tileImageY)
+        const padTop = Math.max(0, -tileImageY)
 
         // Start coordinates inside the source image (always ≥ 0).
         // Clamp to fullWidthPx / fullHeightPx so that a tile starting exactly at
@@ -102,15 +112,15 @@ export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult
         // not 1 pixel (which would leak a stripe of the rightmost column into
         // off-image tiles when skipBlankPages is off).
         const cropLeft = Math.min(Math.max(0, tileImageX), fullWidthPx)
-        const cropTop  = Math.min(Math.max(0, tileImageY), fullHeightPx)
+        const cropTop = Math.min(Math.max(0, tileImageY), fullHeightPx)
 
         // How much image content fits in this tile (after leading padding)
         const cropW = Math.min(tile.srcW - padLeft, fullWidthPx - cropLeft)
-        const cropH = Math.min(tile.srcH - padTop,  fullHeightPx - cropTop)
+        const cropH = Math.min(tile.srcH - padTop, fullHeightPx - cropTop)
 
         // Trailing whitespace (when tile extends beyond the image edge)
-        const padRight  = Math.max(0, tile.srcW - padLeft - Math.max(0, cropW))
-        const padBottom = Math.max(0, tile.srcH - padTop  - Math.max(0, cropH))
+        const padRight = Math.max(0, tile.srcW - padLeft - Math.max(0, cropW))
+        const padBottom = Math.max(0, tile.srcH - padTop - Math.max(0, cropH))
 
         // A tile is blank when it contains no image pixels at all
         const isTileBlank = cropW <= 0 || cropH <= 0
@@ -124,9 +134,11 @@ export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult
               width: tile.srcW,
               height: tile.srcH,
               channels: 3,
-              background: { r: 255, g: 255, b: 255 }
-            }
-          }).jpeg({ quality: 95 }).toBuffer()
+              background: { r: 255, g: 255, b: 255 },
+            },
+          })
+            .jpeg({ quality: 95 })
+            .toBuffer()
         } else {
           tileBuffer = await sharpInput()
             .extract({ left: cropLeft, top: cropTop, width: Math.max(1, cropW), height: Math.max(1, cropH) })
@@ -135,7 +147,7 @@ export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult
               bottom: padBottom,
               left: padLeft,
               right: padRight,
-              background: { r: 255, g: 255, b: 255, alpha: 1 }
+              background: { r: 255, g: 255, b: 255, alpha: 1 },
             })
             .jpeg({ quality: 95 })
             .toBuffer()
@@ -154,7 +166,7 @@ export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult
             widthPx: tileWidthPx,
             heightPx: inkMeta.height ?? tile.srcH,
             pxPerMm: tilePxPerMm,
-            settings: params.inkSaver
+            settings: params.inkSaver,
           })
         }
 
@@ -172,9 +184,10 @@ export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult
         }
 
         pdfPage.drawImage(embeddedImage, {
-          x: 0, y: 0,
+          x: 0,
+          y: 0,
           width: pageWidthPt,
-          height: pageHeightPt
+          height: pageHeightPt,
         })
 
         // Compute the image rect on this tile (used by grid clipping flags).
@@ -182,10 +195,14 @@ export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult
         // the image bounds (fully blank tile) — computeImageRectOnTile handles
         // both and returns a zero-area rect for blank tiles.
         const imageRectMm = computeImageRectOnTile({
-          tileImageX, tileImageY,
-          tileSrcW: tile.srcW, tileSrcH: tile.srcH,
-          imageWidthPx: fullWidthPx, imageHeightPx: fullHeightPx,
-          paperWidthMm: paper.widthMm, paperHeightMm: paper.heightMm
+          tileImageX,
+          tileImageY,
+          tileSrcW: tile.srcW,
+          tileSrcH: tile.srcH,
+          imageWidthPx: fullWidthPx,
+          imageHeightPx: fullHeightPx,
+          paperWidthMm: paper.widthMm,
+          paperHeightMm: paper.heightMm,
         })
 
         // Render grid / marks / labels as vector PDF content on top
@@ -196,18 +213,19 @@ export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult
           grid: params.grid,
           paperWidthMm: paper.widthMm,
           paperHeightMm: paper.heightMm,
-          row, col,
+          row,
+          col,
           totalRows: rows,
           totalCols: cols,
           labelFont,
           imageRectMm,
           overlapMm: {
-            top:    params.tiling.overlapMmTop,
-            right:  params.tiling.overlapMmRight,
+            top: params.tiling.overlapMmTop,
+            right: params.tiling.overlapMmRight,
             bottom: params.tiling.overlapMmBottom,
-            left:   params.tiling.overlapMmLeft
+            left: params.tiling.overlapMmLeft,
           },
-          showOverlapArea: params.tiling.showOverlapArea
+          showOverlapArea: params.tiling.showOverlapArea,
         })
 
         pagesWritten++
@@ -254,7 +272,7 @@ export async function exportTestGridPDF(params: TestGridParams): Promise<ExportR
 
     pdfPage.drawText(
       `Measure ${nLines} grid spaces (should be ${(nLines * spacingMm).toFixed(0)} mm). ` +
-      `Enter: printed mm ÷ ${(nLines * spacingMm).toFixed(0)} mm × 100 = printer scale %`,
+        `Enter: printed mm ÷ ${(nLines * spacingMm).toFixed(0)} mm × 100 = printer scale %`,
       { x: 4 * MM_TO_PT, y: annotY + 3 * MM_TO_PT, size: 5.5, font: labelFont, color: rgb(0.35, 0.35, 0.35) }
     )
 
@@ -266,13 +284,15 @@ export async function exportTestGridPDF(params: TestGridParams): Promise<ExportR
     renderGridOnPage({
       page: pdfPage,
       tile: fakeTile,
-      mmPerPx: 1,            // irrelevant for square grid (no image-origin offset)
+      mmPerPx: 1, // irrelevant for square grid (no image-origin offset)
       grid: gridForTest,
       paperWidthMm: paper.widthMm,
       paperHeightMm: paper.heightMm,
-      row: 0, col: 0,
-      totalRows: 1, totalCols: 1,
-      labelFont
+      row: 0,
+      col: 0,
+      totalRows: 1,
+      totalCols: 1,
+      labelFont,
     })
 
     // Tick marks at top edge so user can count spacings quickly
@@ -283,12 +303,15 @@ export async function exportTestGridPDF(params: TestGridParams): Promise<ExportR
         start: { x, y: pageHeightPt },
         end: { x, y: pageHeightPt - tickH },
         thickness: i % 5 === 0 ? 0.6 : 0.3,
-        color: rgb(0.2, 0.2, 0.2)
+        color: rgb(0.2, 0.2, 0.2),
       })
       if (i % 5 === 0 && i > 0) {
         pdfPage.drawText(`${i * spacingMm}`, {
-          x: x - 3, y: pageHeightPt - 9 * MM_TO_PT,
-          size: 5, font: labelFont, color: rgb(0.2, 0.2, 0.2)
+          x: x - 3,
+          y: pageHeightPt - 9 * MM_TO_PT,
+          size: 5,
+          font: labelFont,
+          color: rgb(0.2, 0.2, 0.2),
         })
       }
     }

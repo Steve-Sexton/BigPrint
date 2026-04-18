@@ -67,10 +67,7 @@ async function applyEdgeFade(
   // offset: 128 shifts the convolution output so that negative gradients are
   // preserved as values below 128 rather than being clamped to 0 by Sharp.
   // The magnitude loop then re-centers with (buf[i] - 128).
-  const grayBuf = await basePipeline.clone()
-    .grayscale()
-    .raw()
-    .toBuffer()
+  const grayBuf = await basePipeline.clone().grayscale().raw().toBuffer()
 
   const sobelXBuf = await sharp(grayBuf, { raw: { width: widthPx, height: heightPx, channels: 1 } })
     .convolve({ width: 3, height: 3, kernel: [-1, 0, 1, -2, 0, 2, -1, 0, 1], scale: 1, offset: 128 })
@@ -97,9 +94,7 @@ async function applyEdgeFade(
     .toBuffer()
 
   // Get original pixels
-  const { data: origData, info } = await basePipeline.clone()
-    .raw()
-    .toBuffer({ resolveWithObject: true })
+  const { data: origData, info } = await basePipeline.clone().raw().toBuffer({ resolveWithObject: true })
 
   const channels = info.channels
   const result = Buffer.alloc(origData.length)
@@ -109,11 +104,13 @@ async function applyEdgeFade(
     const maskAlpha = 1 - (1 - edgeProx) * strength
 
     for (let c = 0; c < channels; c++) {
+      const idx = i * channels + c
+      const orig = origData[idx] ?? 0
       if (c === 3) {
-        result[i * channels + c] = origData[i * channels + c]!
+        // Alpha channel — pass through unchanged.
+        result[idx] = orig
       } else {
-        const orig = origData[i * channels + c]!
-        result[i * channels + c] = Math.round(orig * maskAlpha + 255 * (1 - maskAlpha))
+        result[idx] = Math.round(orig * maskAlpha + 255 * (1 - maskAlpha))
       }
     }
   }

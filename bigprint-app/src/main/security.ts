@@ -17,3 +17,16 @@ export function isSafeExternalUrl(url: string): boolean {
     return false
   }
 }
+
+/**
+ * Same-origin check used by the will-navigate guard. Compares parsed origins
+ * instead of raw strings so trailing slashes, fragments, and query-string
+ * differences don't cause false blocks/allows.
+ */
+export function isSameOrigin(a: string, b: string): boolean {
+  try {
+    return new URL(a).origin === new URL(b).origin
+  } catch {
+    return false
+  }
+}

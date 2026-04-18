@@ -6,14 +6,18 @@ import { bridge } from '../ipc/bridge'
 // ── Grid spacing unit helpers (mirrors TilingSettings pattern) ────────────────
 type SpacingUnit = 'mm' | 'cm' | 'in'
 const TO_MM: Record<SpacingUnit, number> = { mm: 1, cm: 10, in: 25.4 }
-function toUnit(mm: number, unit: SpacingUnit) { return mm / TO_MM[unit] }
-function fromUnit(v: number, unit: SpacingUnit) { return v * TO_MM[unit] }
+function toUnit(mm: number, unit: SpacingUnit) {
+  return mm / TO_MM[unit]
+}
+function fromUnit(v: number, unit: SpacingUnit) {
+  return v * TO_MM[unit]
+}
 
 export function GridSettings() {
   const store = useAppStore()
   const { grid, tiling } = store
   const [exporting, setExporting] = useState(false)
-  const [unit, setUnit] = useState<SpacingUnit>('cm')  // default cm matches original
+  const [unit, setUnit] = useState<SpacingUnit>('cm') // default cm matches original
 
   const gridActive = grid.showGrid || grid.showGridDiagonals
 
@@ -21,9 +25,9 @@ export function GridSettings() {
     setExporting(true)
     try {
       const result = await bridge.exportTestGrid({
-        outputPath: '',   // empty → handler shows save dialog
+        outputPath: '', // empty → handler shows save dialog
         tiling,
-        grid
+        grid,
       })
       if (result.success) {
         alert(`✅ Calibration grid saved to:\n${result.outputPath}`)
@@ -37,7 +41,6 @@ export function GridSettings() {
 
   return (
     <div className="space-y-3 p-3 text-sm">
-
       {/* ── Grid type — two independent checkboxes ── */}
       <div className="space-y-1.5">
         <label className="block text-xs text-gray-600 dark:text-gray-400">Alignment grid</label>
@@ -49,7 +52,9 @@ export function GridSettings() {
             onChange={e => store.setGrid({ showGrid: e.target.checked })}
             className="rounded"
           />
-          <label htmlFor="showGrid" className="text-xs text-gray-700 dark:text-gray-300">Show grid</label>
+          <label htmlFor="showGrid" className="text-xs text-gray-700 dark:text-gray-300">
+            Show grid
+          </label>
         </div>
         <div className="flex items-center gap-2">
           <input
@@ -59,7 +64,9 @@ export function GridSettings() {
             onChange={e => store.setGrid({ showGridDiagonals: e.target.checked })}
             className="rounded"
           />
-          <label htmlFor="showGridDiagonals" className="text-xs text-gray-700 dark:text-gray-300">Show grid diagonals</label>
+          <label htmlFor="showGridDiagonals" className="text-xs text-gray-700 dark:text-gray-300">
+            Show grid diagonals
+          </label>
         </div>
       </div>
 
@@ -73,7 +80,9 @@ export function GridSettings() {
                 <NumericInput
                   value={toUnit(grid.diagonalSpacingMm, unit)}
                   onChange={v => store.setGrid({ diagonalSpacingMm: fromUnit(v, unit) })}
-                  min={0.1} max={500} step={unit === 'mm' ? 1 : 0.1}
+                  min={0.1}
+                  max={500}
+                  step={unit === 'mm' ? 1 : 0.1}
                   decimals={unit === 'mm' ? 0 : 2}
                 />
               </div>
@@ -158,8 +167,8 @@ export function GridSettings() {
       {/* ── Print marks & labels ── */}
       <div className="space-y-1.5">
         {[
-          { key: 'showCutMarks',       label: 'Show cut / trim marks' },
-          { key: 'showPageLabels',     label: 'Show page labels' },
+          { key: 'showCutMarks', label: 'Show cut / trim marks' },
+          { key: 'showPageLabels', label: 'Show page labels' },
           { key: 'showScaleAnnotation', label: 'Show scale reference on printout' },
         ].map(({ key, label }) => (
           <div key={key} className="flex items-center gap-2">
@@ -170,7 +179,9 @@ export function GridSettings() {
               onChange={e => store.setGrid({ [key]: e.target.checked })}
               className="rounded"
             />
-            <label htmlFor={key} className="text-xs text-gray-700 dark:text-gray-300">{label}</label>
+            <label htmlFor={key} className="text-xs text-gray-700 dark:text-gray-300">
+              {label}
+            </label>
           </div>
         ))}
       </div>
@@ -179,10 +190,12 @@ export function GridSettings() {
         <div>
           <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Label style</label>
           <div className="flex rounded border border-gray-300 dark:border-gray-600 overflow-hidden">
-            {([
-              { id: 'grid',       label: 'A1, B2… (Grid)' },
-              { id: 'sequential', label: '1/12… (Sequential)' }
-            ] as { id: 'grid' | 'sequential'; label: string }[]).map(({ id, label }) => (
+            {(
+              [
+                { id: 'grid', label: 'A1, B2… (Grid)' },
+                { id: 'sequential', label: '1/12… (Sequential)' },
+              ] as { id: 'grid' | 'sequential'; label: string }[]
+            ).map(({ id, label }) => (
               <button
                 key={id}
                 onClick={() => store.setGrid({ labelStyle: id })}
@@ -202,7 +215,8 @@ export function GridSettings() {
       {/* ── Calibration grid export ── */}
       <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
         <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-          Printer scale calibration: print this grid, measure 10 spaces with a ruler, enter the ratio in Scale settings.
+          Printer scale calibration: print this grid, measure 10 spaces with a ruler, enter the ratio in Scale
+          settings.
         </p>
         <button
           onClick={handlePrintTestGrid}

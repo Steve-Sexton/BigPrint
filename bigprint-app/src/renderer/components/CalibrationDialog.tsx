@@ -12,7 +12,10 @@ export function CalibrationDialog() {
 
   function handleApply() {
     let mm = parseFloat(distance)
-    if (isNaN(mm) || mm <= 0) { alert('Enter a valid distance.'); return }
+    if (isNaN(mm) || mm <= 0) {
+      alert('Enter a valid distance.')
+      return
+    }
     if (unit === 'cm') mm *= 10
     if (unit === 'in') mm *= 25.4
     applyCalibration(mm)

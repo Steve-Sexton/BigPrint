@@ -8,7 +8,9 @@ export function computeDpiFromTwoPoints(params: {
   const distancePx = Math.sqrt(dx * dx + dy * dy)
 
   if (distancePx < 1) {
-    throw new Error('Points are too close together for reliable calibration (< 1 px apart). Click two points further apart.')
+    throw new Error(
+      'Points are too close together for reliable calibration (< 1 px apart). Click two points further apart.'
+    )
   }
   if (params.realWorldDistanceMm < 1) {
     throw new Error('Real-world distance must be at least 1 mm.')
@@ -17,6 +19,12 @@ export function computeDpiFromTwoPoints(params: {
   return (distancePx * 25.4) / params.realWorldDistanceMm
 }
 
-export function mmToInch(mm: number): number { return mm / 25.4 }
-export function inchToMm(inch: number): number { return inch * 25.4 }
-export function cmToMm(cm: number): number { return cm * 10 }
+export function mmToInch(mm: number): number {
+  return mm / 25.4
+}
+export function inchToMm(inch: number): number {
+  return inch * 25.4
+}
+export function cmToMm(cm: number): number {
+  return cm * 10
+}

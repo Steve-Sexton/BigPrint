@@ -92,4 +92,20 @@ describe('exportToPDF', () => {
     expect(res.success).toBe(false)
     expect(res.errorMessage).toMatch(/no pages/i)
   })
+
+  it('skipBlankPages=true drops every tile that does not contain image pixels', async () => {
+    // Switch to a tiny 200×200 source so only tile [0,0] contains image data.
+    // At Letter portrait / 96 DPI the 4×2 grid has 8 total tiles; only the
+    // first is non-blank. skipBlankPages should write exactly 1 page.
+    sourcePath = await writePng(200, 200)
+    const outPath = path.join(tmpRoot, 'out.pdf')
+    const res = await exportToPDF(paramsFor(outPath, {
+      tiling: { ...paramsFor(outPath).tiling, skipBlankPages: true },
+    }))
+    expect(res.success).toBe(true)
+    expect(res.pagesWritten).toBe(1)
+    const bytes = await fs.readFile(outPath)
+    const doc = await PDFDocument.load(bytes)
+    expect(doc.getPageCount()).toBe(1)
+  })
 })

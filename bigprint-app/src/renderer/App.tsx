@@ -9,7 +9,17 @@ import { MAX_PREVIEW_SIZE_PX } from '../shared/constants'
 import type { AppPreferences } from '../shared/ipc-types'
 
 export function App() {
-  const store = useAppStore()
+  // Stable selectors only — do NOT `const store = useAppStore()` here, which
+  // re-renders the whole App on any state change and re-binds every callback
+  // and useEffect that depends on `store`.
+  const isLoading = useAppStore(s => s.isLoading)
+  const loadingMessage = useAppStore(s => s.loadingMessage)
+  const tiling = useAppStore(s => s.tiling)
+  const grid = useAppStore(s => s.grid)
+  const inkSaver = useAppStore(s => s.inkSaver)
+  const inkSaverPreset = useAppStore(s => s.inkSaverPreset)
+  const printerScaleX = useAppStore(s => s.scale.printerScaleX)
+  const printerScaleY = useAppStore(s => s.scale.printerScaleY)
   const isDraggingOver = useRef(false)
   // Prevents the debounced save effect from firing during the initial hydration
   // pass (load prefs → set store → save effect would rewrite the file with the
@@ -18,7 +28,7 @@ export function App() {
 
   // ── Dark mode initialisation ──────────────────────────────────────────────
   useEffect(() => {
-    const cleanup = bridge.onThemeChange((isDark) => {
+    const cleanup = bridge.onThemeChange(isDark => {
       document.documentElement.classList.toggle('dark', isDark)
     })
     return cleanup
@@ -26,41 +36,57 @@ export function App() {
 
   // ── Load persisted preferences on startup ─────────────────────────────────
   useEffect(() => {
-    bridge.loadPreferences()
+    const { setTiling, setGrid, setInkSaver, setScale, setInkSaverPreset } = useAppStore.getState()
+    bridge
+      .loadPreferences()
       .then(prefs => {
-        if (!prefs) return   // first launch — use DEFAULT_STATE as-is
-        store.setTiling(prefs.tiling)
-        store.setGrid(prefs.grid)
-        store.setInkSaver(prefs.inkSaver)
-        store.setScale({ printerScaleX: prefs.printerScaleX, printerScaleY: prefs.printerScaleY })
+        if (!prefs) return // first launch — use DEFAULT_STATE as-is
+        setTiling(prefs.tiling)
+        setGrid(prefs.grid)
+        setInkSaver(prefs.inkSaver)
+        setScale({ printerScaleX: prefs.printerScaleX, printerScaleY: prefs.printerScaleY })
         // Apply preset last so preset values aren't overwritten by the above
-        if (prefs.inkSaverPreset) store.setInkSaverPreset(prefs.inkSaverPreset)
+        if (prefs.inkSaverPreset) setInkSaverPreset(prefs.inkSaverPreset)
       })
       .catch(err => console.warn('[App] loadPreferences failed:', err))
-      .finally(() => { hydrated.current = true })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+      .finally(() => {
+        hydrated.current = true
+      })
+  }, [])
 
   // ── Persist preferences whenever relevant settings change ─────────────────
   const savePrefsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const savePrefsAlertShownRef = useRef(false)
   useEffect(() => {
-    if (!hydrated.current) return   // skip the initial pass — avoids redundant write on launch
+    if (!hydrated.current) return // skip the initial pass — avoids redundant write on launch
     if (savePrefsTimer.current) clearTimeout(savePrefsTimer.current)
     savePrefsTimer.current = setTimeout(() => {
       const prefs: AppPreferences = {
-        tiling: store.tiling,
-        grid: store.grid,
-        inkSaver: store.inkSaver,
-        inkSaverPreset: store.inkSaverPreset,
-        printerScaleX: store.scale.printerScaleX,
-        printerScaleY: store.scale.printerScaleY
+        tiling,
+        grid,
+        inkSaver,
+        inkSaverPreset,
+        printerScaleX,
+        printerScaleY,
       }
-      bridge.savePreferences(prefs).catch(err =>
+      bridge.savePreferences(prefs).catch(err => {
         console.warn('[App] savePreferences failed:', err)
-      )
+        // Only alert once per session so repeated debounced saves don't spam
+        // the user — subsequent failures still log.
+        if (!savePrefsAlertShownRef.current) {
+          savePrefsAlertShownRef.current = true
+          alert(
+            'Your settings could not be saved to disk. ' +
+              'The app will keep working, but changes may not persist between sessions.\n\n' +
+              `Details: ${String(err)}`
+          )
+        }
+      })
     }, 800)
-    return () => { if (savePrefsTimer.current) clearTimeout(savePrefsTimer.current) }
-  }, [store.tiling, store.grid, store.inkSaver, store.inkSaverPreset,
-      store.scale.printerScaleX, store.scale.printerScaleY])
+    return () => {
+      if (savePrefsTimer.current) clearTimeout(savePrefsTimer.current)
+    }
+  }, [tiling, grid, inkSaver, inkSaverPreset, printerScaleX, printerScaleY])
 
   // ── Drag-and-drop ─────────────────────────────────────────────────────────
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -104,56 +130,60 @@ export function App() {
       return
     }
 
+    const { setLoading, setSource, setScale } = useAppStore.getState()
     const isPdf = mimeType === 'application/pdf'
-    store.setLoading(true, 'Loading image…')
+    setLoading(true, 'Loading image…')
     try {
       const [meta, previewDataUrl, pdfTotalPages] = await Promise.all([
         bridge.getImageMeta(filePath),
         isPdf
           ? bridge.renderPDFPage(filePath, 0, 1)
           : bridge.getPreviewDataUrl(filePath, MAX_PREVIEW_SIZE_PX),
-        isPdf ? bridge.getPDFPageCount(filePath) : Promise.resolve(1)
+        isPdf ? bridge.getPDFPageCount(filePath) : Promise.resolve(1),
       ])
 
-      store.setSource({
+      setSource({
         filePath,
         mimeType,
         naturalWidthPx: meta.widthPx,
         naturalHeightPx: meta.heightPx,
         previewDataUrl: previewDataUrl || '',
         pdfPageIndex: 0,
-        pdfTotalPages: pdfTotalPages ?? 1
+        pdfTotalPages: pdfTotalPages ?? 1,
       })
 
-      if (meta.dpiX && meta.dpiX > 10) {
-        store.setScale({ dpi: meta.dpiX })
+      // Auto-detect DPI — raster formats only. PDFs carry no intrinsic DPI
+      // (they're in points); leave their DPI to the user's current setting.
+      if (meta.dpiX && meta.dpiX > 10 && meta.format !== 'pdf') {
+        setScale({ dpi: meta.dpiX })
       }
     } catch (err) {
       alert(`Failed to load dropped file: ${err}`)
     } finally {
-      store.setLoading(false)
+      setLoading(false)
     }
-  }, [store])
+  }, [])
 
   // ── Paste (clipboard images) ──────────────────────────────────────────────
+  // Empty deps: we deliberately do NOT close over `store` so the listener is
+  // installed exactly once. Actions are read via useAppStore.getState() so
+  // they stay fresh without triggering re-subscription on every state change.
   useEffect(() => {
     const handlePaste = async (e: ClipboardEvent) => {
-      const item = Array.from(e.clipboardData?.items ?? []).find(
-        i => i.type.startsWith('image/')
-      )
+      const { setLoading, setSource } = useAppStore.getState()
+      const item = Array.from(e.clipboardData?.items ?? []).find(i => i.type.startsWith('image/'))
       if (!item) return
 
       const blob = item.getAsFile()
       if (!blob) return
 
-      store.setLoading(true, 'Loading clipboard image…')
+      setLoading(true, 'Loading clipboard image…')
       try {
         // Fetch raw bytes and preview data URL concurrently.
         //   clipboardBuffer → passed verbatim to Sharp on export/print so the
         //                     full-resolution source is never re-encoded through
         //                     the preview pipeline.
         //   dataUrl         → used only for the canvas preview widget.
-        // Reading both at once avoids any coupling between the two concerns.
         const [clipboardBuffer, dataUrl] = await Promise.all([
           blob.arrayBuffer(),
           new Promise<string>((resolve, reject) => {
@@ -161,14 +191,14 @@ export function App() {
             reader.onload = () => resolve(reader.result as string)
             reader.onerror = () => reject(new Error('FileReader failed'))
             reader.readAsDataURL(blob)
-          })
+          }),
         ])
 
         // Measure actual pixel dimensions from the decoded image.
         await new Promise<void>((resolve, reject) => {
           const img = new Image()
           img.onload = () => {
-            store.setSource({
+            setSource({
               filePath: '<clipboard>',
               mimeType: item.type,
               naturalWidthPx: img.naturalWidth,
@@ -176,7 +206,7 @@ export function App() {
               previewDataUrl: dataUrl,
               clipboardBuffer,
               pdfPageIndex: 0,
-              pdfTotalPages: 1
+              pdfTotalPages: 1,
             })
             resolve()
           }
@@ -186,13 +216,13 @@ export function App() {
       } catch (err) {
         alert(`Clipboard paste failed: ${err}`)
       } finally {
-        store.setLoading(false)
+        setLoading(false)
       }
     }
 
     window.addEventListener('paste', handlePaste)
     return () => window.removeEventListener('paste', handlePaste)
-  }, [store])
+  }, [])
 
   return (
     <div
@@ -221,16 +251,18 @@ export function App() {
       <CalibrationDialog />
 
       {/* Loading overlay */}
-      {store.isLoading && (
+      {isLoading && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 pointer-events-none">
           <div className="bg-white dark:bg-gray-800 rounded-lg px-6 py-4 shadow-xl flex items-center gap-3">
             <svg className="animate-spin h-5 w-5 text-blue-600" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              />
             </svg>
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-              {store.loadingMessage}
-            </span>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{loadingMessage}</span>
           </div>
         </div>
       )}

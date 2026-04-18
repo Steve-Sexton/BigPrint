@@ -3,11 +3,18 @@ import fs from 'fs/promises'
 import path from 'path'
 import { PDFDocument } from 'pdf-lib'
 import type {
-  ExportPDFParams, PrintParams, SaveProjectParams,
-  TestGridParams, AppPreferences, FileFilter
+  ExportPDFParams,
+  PrintParams,
+  SaveProjectParams,
+  TestGridParams,
+  AppPreferences,
+  FileFilter,
 } from '../../shared/ipc-types'
 import {
-  validateAppPreferences, validateExportParams, validateTiling, validateGrid
+  validateAppPreferences,
+  validateExportParams,
+  validateTiling,
+  validateGrid,
 } from '../../shared/ipc-types'
 import { getImageMeta, getPreviewDataUrl, getSupportedMimeType } from '../image/ImagePipeline'
 import { exportToPDF, exportTestGridPDF } from '../pdf/PDFEngine'
@@ -19,8 +26,8 @@ import { SUPPORTED_INPUT_EXTENSIONS } from '../../shared/constants'
 // ── File path validation ───────────────────────────────────────────────────────
 // IPC handlers receive file paths from the renderer. Even with contextIsolation
 // the path should be absolute and free of null bytes before we pass it to
-// Node.js file APIs.
-function isValidFilePath(filePath: unknown): filePath is string {
+// Node.js file APIs. Exported for unit tests — the predicate is pure.
+export function isValidFilePath(filePath: unknown): filePath is string {
   return (
     typeof filePath === 'string' &&
     filePath.length > 0 &&
@@ -29,7 +36,7 @@ function isValidFilePath(filePath: unknown): filePath is string {
   )
 }
 
-function assertFilePath(filePath: unknown): string {
+export function assertFilePath(filePath: unknown): string {
   if (!isValidFilePath(filePath)) {
     throw new Error(`Invalid file path: ${JSON.stringify(filePath)}`)
   }
@@ -55,40 +62,78 @@ async function renderPDFPageDataUrl(filePath: string, pageIndex: number, scale: 
   }
 }
 
+// Mutable reference to the currently-active window. registerAllHandlers is
+// called exactly once at app startup; the window may change across
+// open/close/reactivate cycles, and setActiveWindow updates the reference so
+// later IPC invocations address whichever window is current.
+let activeWindow: BrowserWindow | null = null
+export function setActiveWindow(win: BrowserWindow | null): void {
+  activeWindow = win
+}
+
+// Session-scoped allowlist of paths the renderer is permitted to read back
+// verbatim via `pdf:getBytes` / `image:*`.  A path is added only when it has
+// entered through a user-initiated flow (open dialog or confirmed dropped
+// file).  This blocks a compromised renderer from turning IPC into an
+// arbitrary-file-read primitive.
+const allowedReadPaths = new Set<string>()
+const allowRead = (p: string): void => {
+  allowedReadPaths.add(path.normalize(p))
+}
+const isReadAllowed = (p: string): boolean => allowedReadPaths.has(path.normalize(p))
+
+// Exposed for unit tests that need to reset state between runs.
+export function __resetHandlerStateForTests(): void {
+  allowedReadPaths.clear()
+  activeWindow = null
+}
+
+let handlersRegistered = false
+
 export function registerAllHandlers(win: BrowserWindow): void {
+  setActiveWindow(win)
+  if (handlersRegistered) return
+  handlersRegistered = true
 
-  // Session-scoped allowlist of paths the renderer is permitted to read back
-  // verbatim via `pdf:getBytes` / `image:*`.  A path is added only when it has
-  // entered through a user-initiated flow (open dialog or confirmed dropped
-  // file).  This blocks a compromised renderer from turning IPC into an
-  // arbitrary-file-read primitive.
-  const allowedReadPaths = new Set<string>()
-  const allowRead = (p: string) => allowedReadPaths.add(path.normalize(p))
-  const isReadAllowed = (p: string) => allowedReadPaths.has(path.normalize(p))
+  // Resolve the current window at call time; falls back to the window passed
+  // at registration if setActiveWindow hasn't been invoked since.
+  const currentWin = (): BrowserWindow => {
+    const w = activeWindow ?? win
+    if (w.isDestroyed()) throw new Error('No active window for IPC handler')
+    return w
+  }
 
-  // Reject IPC calls from frames other than the main frame of the BrowserWindow
-  // we registered against. Prevents any future nested <webview>/<iframe> from
-  // reaching privileged handlers.
+  // Reject IPC calls from frames other than the main frame of the active
+  // BrowserWindow. Prevents any future nested <webview>/<iframe> from reaching
+  // privileged handlers.
   const isTrustedSender = (event: IpcMainInvokeEvent): boolean => {
     const frame = event.senderFrame
-    return frame !== null && frame === win.webContents.mainFrame
+    if (frame === null) return false
+    try {
+      return frame === currentWin().webContents.mainFrame
+    } catch {
+      return false
+    }
   }
   function guard(event: IpcMainInvokeEvent): void {
     if (!isTrustedSender(event)) throw new Error('Unauthorized IPC sender')
   }
 
   // ── File open ──────────────────────────────────────────────────────────
-  ipcMain.handle('file:open', async (event) => {
+  ipcMain.handle('file:open', async event => {
     guard(event)
-    const result = await dialog.showOpenDialog(win, {
+    const result = await dialog.showOpenDialog(currentWin(), {
       title: 'Open Image or PDF',
       properties: ['openFile'],
       filters: [
         { name: 'Supported Files', extensions: SUPPORTED_INPUT_EXTENSIONS.map(e => e.slice(1)) },
-        { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'bmp', 'gif', 'webp', 'tiff', 'tif', 'svg', 'avif'] },
+        {
+          name: 'Images',
+          extensions: ['jpg', 'jpeg', 'png', 'bmp', 'gif', 'webp', 'tiff', 'tif', 'svg', 'avif'],
+        },
         { name: 'PDF', extensions: ['pdf'] },
-        { name: 'All Files', extensions: ['*'] }
-      ]
+        { name: 'All Files', extensions: ['*'] },
+      ],
     })
     if (result.canceled || !result.filePaths[0]) return null
     const filePath = result.filePaths[0]
@@ -96,11 +141,39 @@ export function registerAllHandlers(win: BrowserWindow): void {
     return { filePath, mimeType: getSupportedMimeType(filePath) }
   })
 
-  // Dropped files and clipboard paths come in through the metadata handler —
-  // register them as allowed before subsequent reads are attempted.
+  // Dropped files and clipboard paths come in through this handler. The
+  // renderer is only trusted with the path to a file it obtained from the
+  // user's drag-and-drop (via webUtils.getPathForFile). To limit the blast
+  // radius if a compromised renderer calls this directly, we:
+  //   1. Require the extension to match one we actually support,
+  //   2. Require the file to exist, be a regular file, and be below a
+  //      reasonable size ceiling (avoids /dev/zero-style DOS and arbitrary
+  //      non-media reads),
+  //   3. Cap the number of registrations per session.
+  // This does not fully replace a trusted-drop channel from the main process
+  // but narrows the attack surface materially compared to admitting any
+  // absolute path.
+  const MAX_REGISTER_PER_SESSION = 50
+  const MAX_REGISTER_BYTES = 500 * 1024 * 1024 // 500 MB
+  let registerCount = 0
   ipcMain.handle('file:register', async (event, filePath: unknown) => {
     guard(event)
     const p = assertFilePath(filePath)
+    if (registerCount >= MAX_REGISTER_PER_SESSION) {
+      throw new Error('Too many file registrations this session')
+    }
+    const ext = path.extname(p).toLowerCase()
+    if (!SUPPORTED_INPUT_EXTENSIONS.includes(ext)) {
+      throw new Error(`Unsupported file extension: ${ext || '(none)'}`)
+    }
+    const stat = await fs.stat(p).catch(() => null)
+    if (!stat || !stat.isFile()) {
+      throw new Error('File does not exist or is not a regular file')
+    }
+    if (stat.size > MAX_REGISTER_BYTES) {
+      throw new Error(`File too large to register (${stat.size} bytes)`)
+    }
+    registerCount++
     allowRead(p)
     return { filePath: p, mimeType: getSupportedMimeType(p) }
   })
@@ -114,10 +187,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
       if (err) return false
       let filePath = data.filePath
       if (!filePath) {
-        const res = await dialog.showSaveDialog(win, {
+        const res = await dialog.showSaveDialog(currentWin(), {
           title: 'Save Project',
           defaultPath: 'project.tilr',
-          filters: [{ name: 'BigPrint Project', extensions: ['tilr'] }]
+          filters: [{ name: 'BigPrint Project', extensions: ['tilr'] }],
         })
         if (res.canceled || !res.filePath) return false
         filePath = res.filePath
@@ -126,20 +199,23 @@ export function registerAllHandlers(win: BrowserWindow): void {
       }
       await saveProject(filePath, data)
       return true
-    } catch { return false }
+    } catch {
+      return false
+    }
   })
 
   // ── Load project dialog ────────────────────────────────────────────────
-  ipcMain.handle('project:load', async (event) => {
+  ipcMain.handle('project:load', async event => {
     guard(event)
-    const res = await dialog.showOpenDialog(win, {
+    const res = await dialog.showOpenDialog(currentWin(), {
       title: 'Open Project',
       filters: [{ name: 'BigPrint Project', extensions: ['tilr'] }],
-      properties: ['openFile']
+      properties: ['openFile'],
     })
     if (res.canceled || !res.filePaths[0]) return null
-    try { return await loadProject(res.filePaths[0]) }
-    catch (err) {
+    try {
+      return await loadProject(res.filePaths[0])
+    } catch (err) {
       dialog.showErrorBox('Load Failed', `Could not load project: ${String(err)}`)
       return null
     }
@@ -179,7 +255,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
       const doc = await PDFDocument.load(bytes, { ignoreEncryption: true })
       return doc.getPageCount()
     } catch {
-      return 1  // fallback for encrypted / unreadable PDFs
+      return 1 // fallback for encrypted / unreadable PDFs
     }
   })
 
@@ -191,9 +267,12 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const p = assertFilePath(filePath)
     if (!isReadAllowed(p)) throw new Error('File path is not in the session allowlist')
     const buf = await fs.readFile(p)
-    // Return a true ArrayBuffer (not a Buffer/Uint8Array view) so that the
-    // structured-clone serialisation across the context bridge is unambiguous.
-    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer
+    // Copy into a fresh ArrayBuffer (not a Buffer view of ArrayBufferLike) so
+    // the static type is unambiguously ArrayBuffer (no SharedArrayBuffer risk)
+    // and structured-clone across the context bridge is well-defined.
+    const copy = new ArrayBuffer(buf.byteLength)
+    new Uint8Array(copy).set(buf)
+    return copy
   })
 
   // ── Export PDF ─────────────────────────────────────────────────────────
@@ -202,10 +281,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const verr = validateExportParams(params)
     if (verr) return { success: false, errorMessage: verr }
     if (!params.outputPath) {
-      const res = await dialog.showSaveDialog(win, {
+      const res = await dialog.showSaveDialog(currentWin(), {
         title: 'Export PDF',
         defaultPath: 'output.pdf',
-        filters: [{ name: 'PDF', extensions: ['pdf'] }]
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
       })
       if (res.canceled || !res.filePath) return { success: false, errorMessage: 'Cancelled' }
       params = { ...params, outputPath: res.filePath }
@@ -224,10 +303,10 @@ export function registerAllHandlers(win: BrowserWindow): void {
     const gerr = validateGrid(params?.grid)
     if (gerr) return { success: false, errorMessage: gerr }
     if (!params.outputPath) {
-      const res = await dialog.showSaveDialog(win, {
+      const res = await dialog.showSaveDialog(currentWin(), {
         title: 'Save Calibration Grid',
         defaultPath: 'calibration-grid.pdf',
-        filters: [{ name: 'PDF', extensions: ['pdf'] }]
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
       })
       if (res.canceled || !res.filePath) return { success: false, errorMessage: 'Cancelled' }
       params = { ...params, outputPath: res.filePath }
@@ -242,21 +321,35 @@ export function registerAllHandlers(win: BrowserWindow): void {
     guard(event)
     const verr = validateExportParams({ ...params, outputPath: '' })
     if (verr) return { success: false, errorMessage: verr }
-    return printDirect(win, params)
+    return printDirect(currentWin(), params)
   })
 
   // ── System printers ────────────────────────────────────────────────────
-  ipcMain.handle('print:getPrinters', async (event) => {
+  // webContents.getPrintersAsync is deprecated and may be removed in a future
+  // Electron major. Wrap in a try/catch that returns a minimal fallback so the
+  // UI can still drive the OS default printer via `deviceName: ''`.
+  ipcMain.handle('print:getPrinters', async event => {
     guard(event)
-    const printers = await win.webContents.getPrintersAsync()
-    return printers.map(p => ({
-      name: p.name,
-      displayName: p.displayName ?? p.name
-    }))
+    try {
+      const wc = currentWin().webContents as unknown as {
+        getPrintersAsync?: () => Promise<Array<{ name: string; displayName?: string }>>
+      }
+      if (typeof wc.getPrintersAsync !== 'function') {
+        return [{ name: '', displayName: 'System default printer' }]
+      }
+      const printers = await wc.getPrintersAsync()
+      return printers.map(p => ({
+        name: p.name,
+        displayName: p.displayName ?? p.name,
+      }))
+    } catch (err) {
+      console.warn('[ipc] getPrintersAsync failed; falling back to default:', err)
+      return [{ name: '', displayName: 'System default printer' }]
+    }
   })
 
   // ── Preferences ────────────────────────────────────────────────────────────
-  ipcMain.handle('preferences:load', async (event) => {
+  ipcMain.handle('preferences:load', async event => {
     guard(event)
     return PreferencesStore.load()
   })
@@ -270,7 +363,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
   // ── Save dialog (generic) ──────────────────────────────────────────────
   ipcMain.handle('dialog:showSave', async (event, defaultName: string, filters: FileFilter[]) => {
     guard(event)
-    const res = await dialog.showSaveDialog(win, { defaultPath: defaultName, filters })
+    const res = await dialog.showSaveDialog(currentWin(), { defaultPath: defaultName, filters })
     return res.canceled ? null : res.filePath
   })
 }

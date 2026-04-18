@@ -2,13 +2,11 @@ import { BrowserWindow } from 'electron'
 import os from 'os'
 import path from 'path'
 import fs from 'fs/promises'
+import { pathToFileURL } from 'node:url'
 import type { PrintParams, PrintResult } from '../../shared/ipc-types'
 import { exportToPDF } from '../pdf/PDFEngine'
 
-export async function printDirect(
-  win: BrowserWindow,
-  params: PrintParams
-): Promise<PrintResult> {
+export async function printDirect(win: BrowserWindow, params: PrintParams): Promise<PrintResult> {
   try {
     // Generate the full multi-page tiled PDF into a temp file, then hand it
     // to Electron's webContents.print for the OS print dialog.  Temp file is
@@ -25,7 +23,7 @@ export async function printDirect(
       enabledPages: params.enabledPages,
       pdfPageIndex: params.pdfPageIndex,
       sourceBuffer: params.sourceBuffer,
-      cropRect: params.cropRect
+      cropRect: params.cropRect,
     })
 
     if (!exportResult.success) {
@@ -54,14 +52,16 @@ export async function printDirect(
     }
 
     try {
-      await printWin.loadURL(`file://${tmpPath}`)
+      // pathToFileURL handles Windows backslashes, drive letters, spaces, and
+      // non-ASCII characters; naive `file://${tmpPath}` concat does not.
+      await printWin.loadURL(pathToFileURL(tmpPath).href)
       await new Promise<void>((resolve, reject) => {
         printWin.webContents.print(
           {
             silent: false,
             printBackground: true,
             deviceName: params.printerName ?? '',
-            margins: { marginType: 'none' }
+            margins: { marginType: 'none' },
           },
           (success, reason) => {
             if (success) resolve()

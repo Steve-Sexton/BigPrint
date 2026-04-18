@@ -26,7 +26,7 @@ export function useCalibration() {
       const newDpi = computeDpiFromTwoPoints({
         point1Px: { x: store.calibrationPoint1.xPx, y: store.calibrationPoint1.yPx },
         point2Px: { x: store.calibrationPoint2.xPx, y: store.calibrationPoint2.yPx },
-        realWorldDistanceMm: distanceMm
+        realWorldDistanceMm: distanceMm,
       })
       // Preserve the user's prior physical size by rebasing outputScale so the
       // product (25.4 / dpi) * outputScale is unchanged after DPI swaps. This

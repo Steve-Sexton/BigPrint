@@ -17,7 +17,7 @@ const CALIBRATION_GRID_OVERRIDE = {
   alignToImage: false,
   extendBeyondImage: true,
   suppressOverImage: false,
-  showScaleAnnotation: false
+  showScaleAnnotation: false,
 }
 
 export function ScaleSettings() {
@@ -50,7 +50,7 @@ export function ScaleSettings() {
       overlapMmTop: store.tiling.overlapMmTop,
       overlapMmRight: store.tiling.overlapMmRight,
       overlapMmBottom: store.tiling.overlapMmBottom,
-      overlapMmLeft: store.tiling.overlapMmLeft
+      overlapMmLeft: store.tiling.overlapMmLeft,
     })
     pageCount = `${cols} × ${rows} = ${cols * rows} pages`
   }
@@ -79,12 +79,14 @@ export function ScaleSettings() {
     setExportingCalPage(true)
     try {
       const result = await bridge.exportTestGrid({
-        outputPath: '',   // empty → handler shows save dialog
+        outputPath: '', // empty → handler shows save dialog
         tiling: store.tiling,
-        grid: CALIBRATION_GRID_OVERRIDE
+        grid: CALIBRATION_GRID_OVERRIDE,
       })
       if (result.success) {
-        alert(`✅ Calibration page saved:\n${result.outputPath}\n\nPrint at 100% (no fit-to-page). Measure 10 squares with a ruler, then use: measured ÷ expected × 100 = %.`)
+        alert(
+          `✅ Calibration page saved:\n${result.outputPath}\n\nPrint at 100% (no fit-to-page). Measure 10 squares with a ruler, then use: measured ÷ expected × 100 = %.`
+        )
       } else if (result.errorMessage) {
         alert(`❌ Export failed: ${result.errorMessage}`)
       }
@@ -108,7 +110,10 @@ export function ScaleSettings() {
           <NumericInput
             value={scale.dpi}
             onChange={v => store.setScale({ dpi: v })}
-            min={1} max={9600} step={1} decimals={1}
+            min={1}
+            max={9600}
+            step={1}
+            decimals={1}
           />
         </div>
         <div>
@@ -116,7 +121,10 @@ export function ScaleSettings() {
           <NumericInput
             value={scale.outputScale}
             onChange={v => store.setScale({ outputScale: v })}
-            min={0.01} max={10} step={0.01} decimals={2}
+            min={0.01}
+            max={10}
+            step={0.01}
+            decimals={2}
           />
         </div>
       </div>
@@ -131,7 +139,11 @@ export function ScaleSettings() {
             <NumericInput
               value={Math.round(scale.printerScaleX * 10000) / 100}
               onChange={v => store.setScale({ printerScaleX: v / 100 })}
-              min={90} max={110} step={0.1} decimals={2} unit="%"
+              min={90}
+              max={110}
+              step={0.1}
+              decimals={2}
+              unit="%"
             />
           </div>
           <div>
@@ -139,13 +151,15 @@ export function ScaleSettings() {
             <NumericInput
               value={Math.round(scale.printerScaleY * 10000) / 100}
               onChange={v => store.setScale({ printerScaleY: v / 100 })}
-              min={90} max={110} step={0.1} decimals={2} unit="%"
+              min={90}
+              max={110}
+              step={0.1}
+              decimals={2}
+              unit="%"
             />
           </div>
         </div>
-        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-          Formula: measured ÷ expected × 100
-        </p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Formula: measured ÷ expected × 100</p>
         <button
           onClick={handleExportCalibrationPage}
           disabled={exportingCalPage}
@@ -161,9 +175,10 @@ export function ScaleSettings() {
         className="w-full rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs py-1.5 font-medium transition-colors"
       >
         {calibrationMode !== 'idle'
-          ? calibrationMode === 'point1' ? '🎯 Click point 1 on image…' : '🎯 Click point 2 on image…'
-          : 'Set Scale via Two-Point Calibration'
-        }
+          ? calibrationMode === 'point1'
+            ? '🎯 Click point 1 on image…'
+            : '🎯 Click point 2 on image…'
+          : 'Set Scale via Two-Point Calibration'}
       </button>
 
       {calibrationMode !== 'idle' && (
@@ -184,7 +199,9 @@ export function ScaleSettings() {
           }`}
         >
           {measureMode !== 'idle'
-            ? (measurePoint1 && !measurePoint2 ? '📐 Click second point…' : '✕ Stop Measuring')
+            ? measurePoint1 && !measurePoint2
+              ? '📐 Click second point…'
+              : '✕ Stop Measuring'
             : '📐 Measure Image'}
         </button>
 

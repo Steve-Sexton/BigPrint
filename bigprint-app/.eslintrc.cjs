@@ -9,6 +9,11 @@ module.exports = {
     ecmaVersion: 2022,
     sourceType: 'module',
     ecmaFeatures: { jsx: true },
+    // Enable type-aware rules (no-floating-promises etc.). Uses a dedicated
+    // tsconfig that unions the web + node projects with a full lib set so
+    // ESLint can resolve every source file without shared-tree DOM errors.
+    project: './tsconfig.eslint.json',
+    tsconfigRootDir: __dirname,
   },
   plugins: ['@typescript-eslint', 'react', 'react-hooks', 'import'],
   extends: [
@@ -25,7 +30,7 @@ module.exports = {
     'react/react-in-jsx-scope': 'off',
     'react/prop-types': 'off',
     // Strictness on async / promise patterns that bite in an Electron IPC codebase.
-    '@typescript-eslint/no-floating-promises': 'off', // parserOptions.project not configured — disable type-aware rules.
+    '@typescript-eslint/no-floating-promises': ['error', { ignoreVoid: true }],
     '@typescript-eslint/no-explicit-any': 'warn',
     '@typescript-eslint/no-non-null-assertion': 'warn',
     '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],

@@ -1,5 +1,12 @@
 import fs from 'fs/promises'
-import type { ScaleSettings, TilingSettings, GridSettings, InkSaverSettings, SaveProjectParams, LoadProjectResult } from '../../shared/ipc-types'
+import type {
+  ScaleSettings,
+  TilingSettings,
+  GridSettings,
+  InkSaverSettings,
+  SaveProjectParams,
+  LoadProjectResult,
+} from '../../shared/ipc-types'
 import { validateScale, validateTiling, validateGrid, validateInkSaver } from '../../shared/ipc-types'
 
 const PROJECT_VERSION = 1
@@ -23,10 +30,14 @@ export function validateProjectData(data: unknown): string | null {
 
   if (typeof d['version'] !== 'number' || d['version'] < 1) return 'Missing or invalid version'
 
-  const s = validateScale(d['scale']);      if (s) return s
-  const t = validateTiling(d['tiling']);    if (t) return t
-  const g = validateGrid(d['grid']);        if (g) return g
-  const i = validateInkSaver(d['inkSaver']); if (i) return i
+  const s = validateScale(d['scale'])
+  if (s) return s
+  const t = validateTiling(d['tiling'])
+  if (t) return t
+  const g = validateGrid(d['grid'])
+  if (g) return g
+  const i = validateInkSaver(d['inkSaver'])
+  if (i) return i
 
   return null
 }
@@ -37,7 +48,7 @@ export async function saveProject(filePath: string, params: SaveProjectParams): 
     scale: params.scale,
     tiling: params.tiling,
     grid: params.grid,
-    inkSaver: params.inkSaver
+    inkSaver: params.inkSaver,
   }
   await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8')
 }
@@ -54,6 +65,6 @@ export async function loadProject(filePath: string): Promise<LoadProjectResult> 
     scale: d.scale,
     tiling: d.tiling,
     grid: d.grid,
-    inkSaver: d.inkSaver
+    inkSaver: d.inkSaver,
   }
 }
