@@ -42,3 +42,16 @@ describe('getLabelForTile — sequential style', () => {
     expect(getLabelForTile(1, 0, 3, 4, 'sequential')).toBe('5 / 12')
   })
 })
+
+describe('getLabelForTile — negative inputs must not infinite-loop', () => {
+  it('returns within a single tick for row = -1 (pins current behavior)', () => {
+    // Pin current observed behavior: do-while terminates after one pass when
+    // r=-1 (Math.floor(-1/26)-1 = -2 → loop exits). Completes effectively
+    // instantly — the guard here asserts the label exists and is finite.
+    const start = Date.now()
+    const label = getLabelForTile(-1, 0, 10, 1, 'grid')
+    expect(Date.now() - start).toBeLessThan(100)
+    expect(typeof label).toBe('string')
+    expect(label.length).toBeGreaterThan(0)
+  })
+})

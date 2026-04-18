@@ -28,11 +28,19 @@ export function useCalibration() {
         point2Px: { x: store.calibrationPoint2.xPx, y: store.calibrationPoint2.yPx },
         realWorldDistanceMm: distanceMm
       })
-      // Reset outputScale to 1.0: calibration absorbs any prior scale factor.
-      // Without this, if outputScale ≠ 1.0 the computed DPI is wrong by that factor.
-      store.setScale({ dpi: Math.round(newDpi * 100) / 100, outputScale: 1.0 })
+      // Preserve the user's prior physical size by rebasing outputScale so the
+      // product (25.4 / dpi) * outputScale is unchanged after DPI swaps. This
+      // makes the calibration a pure "tell me the truth about scale" action
+      // rather than a silent "reset scale to 1.0" — the printed dimensions
+      // stay the same.
+      const roundedDpi = Math.round(newDpi * 100) / 100
+      const priorMmPerPx = (25.4 / store.scale.dpi) * store.scale.outputScale
+      const newOutputScale = priorMmPerPx / (25.4 / roundedDpi)
+      store.setScale({
+        dpi: roundedDpi,
+        outputScale: Math.max(0.01, Math.min(10, Math.round(newOutputScale * 10000) / 10000)),
+      })
       // Keep calibration points visible on canvas as a reference annotation.
-      // Just close the dialog and return to idle — don't clear the points.
       store.setCalibrationMode('idle')
       store.setShowCalibrationDialog(false)
     } catch (err) {

@@ -49,4 +49,24 @@ describe('computeDpiFromTwoPoints', () => {
       })
     ).toThrow()
   })
+
+  it('accepts realWorldDistanceMm = 1 (lower inclusive bound)', () => {
+    // 100 px over 1 mm = 2540 DPI exactly
+    const dpi = computeDpiFromTwoPoints({
+      point1Px: { x: 0, y: 0 },
+      point2Px: { x: 100, y: 0 },
+      realWorldDistanceMm: 1
+    })
+    expect(dpi).toBeCloseTo(2540, 6)
+  })
+
+  it('accepts distancePx = 1 exactly (boundary at the "< 1 px" guard)', () => {
+    // 1 px over 25.4 mm = 1 DPI
+    const dpi = computeDpiFromTwoPoints({
+      point1Px: { x: 0, y: 0 },
+      point2Px: { x: 1, y: 0 },
+      realWorldDistanceMm: 25.4
+    })
+    expect(dpi).toBeCloseTo(1, 6)
+  })
 })

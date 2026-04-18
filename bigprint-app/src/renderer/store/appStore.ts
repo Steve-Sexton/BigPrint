@@ -20,9 +20,6 @@ export const INK_SAVER_HEAVY_PRESET = {
   edgeFadeRadiusMm: 2     // 2mm ≈ 24px at 300dpi, ~8px at 96dpi
 }
 
-/** @deprecated use INK_SAVER_HEAVY_PRESET */
-export const INK_SAVER_AUTO_PRESET = INK_SAVER_HEAVY_PRESET
-
 const DEFAULT_STATE: AppState = {
   source: null,
   scale: {

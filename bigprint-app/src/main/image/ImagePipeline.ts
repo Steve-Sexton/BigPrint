@@ -3,7 +3,7 @@ import path from 'path'
 import fs from 'fs'
 import { PDFDocument } from 'pdf-lib'
 import type { ImageMetaResult } from '../../shared/ipc-types'
-import { MAX_PREVIEW_SIZE_PX } from '../../shared/constants'
+import { MAX_PREVIEW_SIZE_PX, MAX_SOURCE_IMAGE_PX } from '../../shared/constants'
 
 // ── PDF metadata ──────────────────────────────────────────────────────────────
 async function getPDFMeta(filePath: string): Promise<ImageMetaResult> {
@@ -59,20 +59,25 @@ async function getSVGMeta(filePath: string): Promise<ImageMetaResult> {
     }
   } catch { /* fall through to manual parse */ }
 
-  // Manual parse: read SVG file and pull width/height from root element
+  // Manual parse: read SVG file and pull width/height from root element.
+  // If reading the file fails outright (deleted / permission denied), return
+  // the zero-dimension sentinel so Toolbar.handleOpen surfaces the error to
+  // the user instead of rendering an 800×600 phantom placeholder.
+  let content: string
   try {
-    const content = fs.readFileSync(filePath, 'utf8').slice(0, 4096)
-    const vbMatch = content.match(/viewBox\s*=\s*["'][\d.]+\s+[\d.]+\s+([\d.]+)\s+([\d.]+)["']/)
-    const wMatch  = content.match(/\bwidth\s*=\s*["']([\d.]+)(?:px)?["']/)
-    const hMatch  = content.match(/\bheight\s*=\s*["']([\d.]+)(?:px)?["']/)
-
-    const w = wMatch  ? parseFloat(wMatch[1])  : (vbMatch ? parseFloat(vbMatch[1]) : 800)
-    const h = hMatch  ? parseFloat(hMatch[1])  : (vbMatch ? parseFloat(vbMatch[2]) : 600)
-
-    return { widthPx: Math.round(w), heightPx: Math.round(h), dpiX: 96, dpiY: 96, format: 'svg', hasAlpha: true }
+    content = fs.readFileSync(filePath, 'utf8').slice(0, 4096)
   } catch {
-    return { widthPx: 800, heightPx: 600, dpiX: 96, dpiY: 96, format: 'svg', hasAlpha: true }
+    return { widthPx: 0, heightPx: 0, dpiX: null, dpiY: null, format: 'svg', hasAlpha: true }
   }
+
+  const vbMatch = content.match(/viewBox\s*=\s*["'][\d.]+\s+[\d.]+\s+([\d.]+)\s+([\d.]+)["']/)
+  const wMatch  = content.match(/\bwidth\s*=\s*["']([\d.]+)(?:px)?["']/)
+  const hMatch  = content.match(/\bheight\s*=\s*["']([\d.]+)(?:px)?["']/)
+
+  const w = wMatch  ? parseFloat(wMatch[1])  : (vbMatch ? parseFloat(vbMatch[1]) : 800)
+  const h = hMatch  ? parseFloat(hMatch[1])  : (vbMatch ? parseFloat(vbMatch[2]) : 600)
+
+  return { widthPx: Math.round(w), heightPx: Math.round(h), dpiX: 96, dpiY: 96, format: 'svg', hasAlpha: true }
 }
 
 // ── Main entry points ─────────────────────────────────────────────────────────
@@ -88,9 +93,17 @@ export async function getImageMeta(filePath: string): Promise<ImageMetaResult> {
   // instead of crashing the IPC handler.
   try {
     const meta = await sharp(filePath).metadata()
+    const w = meta.width ?? 0
+    const h = meta.height ?? 0
+    // Reject sources so large that downstream Sharp operations would exhaust
+    // memory. MAX_SOURCE_IMAGE_PX applies to each dimension independently.
+    if (w > MAX_SOURCE_IMAGE_PX || h > MAX_SOURCE_IMAGE_PX) {
+      console.warn(`[ImagePipeline] Image exceeds ${MAX_SOURCE_IMAGE_PX}px on an axis (${w}×${h}); refusing to load`)
+      return { widthPx: 0, heightPx: 0, dpiX: null, dpiY: null, format: meta.format ?? 'unknown', hasAlpha: meta.hasAlpha ?? false }
+    }
     return {
-      widthPx:  meta.width  ?? 0,
-      heightPx: meta.height ?? 0,
+      widthPx:  w,
+      heightPx: h,
       dpiX: meta.density ?? null,
       dpiY: meta.density ?? null,
       format: meta.format ?? 'unknown',
@@ -152,6 +165,7 @@ export function getSupportedMimeType(filePath: string): string {
     '.png': 'image/png', '.bmp': 'image/bmp',
     '.gif': 'image/gif', '.webp': 'image/webp',
     '.tiff': 'image/tiff', '.tif': 'image/tiff',
+    '.avif': 'image/avif',
     '.svg': 'image/svg+xml',
     '.pdf': 'application/pdf'
   }

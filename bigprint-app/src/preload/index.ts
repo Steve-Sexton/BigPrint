@@ -1,8 +1,12 @@
-import { contextBridge, ipcRenderer } from 'electron'
-import type { ElectronAPI, ExportPDFParams, PrintParams, SaveProjectParams, TestGridParams, AppPreferences } from '../shared/ipc-types'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import type {
+  ElectronAPI, ExportPDFParams, PrintParams, SaveProjectParams,
+  TestGridParams, AppPreferences, FileFilter
+} from '../shared/ipc-types'
 
 const api: ElectronAPI = {
   openFile: () => ipcRenderer.invoke('file:open'),
+  registerFile: (filePath: string) => ipcRenderer.invoke('file:register', filePath),
 
   saveProjectDialog: (data: SaveProjectParams) => ipcRenderer.invoke('project:save', data),
   loadProjectDialog: () => ipcRenderer.invoke('project:load'),
@@ -31,13 +35,20 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener('theme:changed', handler)
   },
 
-  showSaveDialog: (defaultName: string, filters) =>
+  showSaveDialog: (defaultName: string, filters: FileFilter[]) =>
     ipcRenderer.invoke('dialog:showSave', defaultName, filters),
 
   loadPreferences: () =>
     ipcRenderer.invoke('preferences:load'),
   savePreferences: (prefs: AppPreferences) =>
-    ipcRenderer.invoke('preferences:save', prefs)
+    ipcRenderer.invoke('preferences:save', prefs),
+
+  // File.path was removed in Electron 32+. Use webUtils from the preload to
+  // resolve a dragged-in File to its on-disk path. Returns '' when the File
+  // has no backing OS path (sandboxed picker results).
+  getPathForFile: (file: File) => {
+    try { return webUtils.getPathForFile(file) } catch { return '' }
+  }
 }
 
 contextBridge.exposeInMainWorld('electronAPI', api)

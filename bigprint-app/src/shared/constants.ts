@@ -19,11 +19,14 @@ export const PAPER_SIZE_MAP: Record<string, PaperSize> = Object.fromEntries(
 )
 
 export const SUPPORTED_INPUT_EXTENSIONS = [
-  '.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp', '.tiff', '.tif', '.svg', '.pdf'
+  '.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp', '.tiff', '.tif', '.svg', '.pdf', '.avif'
 ]
 
 export const MAX_PREVIEW_SIZE_PX = 2048
 export const MAX_SOURCE_IMAGE_PX = 20000
+
+// Shared mm ↔ PDF point constant. 1 pt = 1/72 inch, 1 inch = 25.4 mm.
+export const MM_TO_PT = 2.8346456
 
 export function getPaperSize(id: string, orientation: 'portrait' | 'landscape'): { widthMm: number; heightMm: number } {
   const p = PAPER_SIZE_MAP[id] ?? PAPER_SIZES[0]

@@ -155,4 +155,14 @@ describe('computeTileGrid', () => {
     // symmetric across opposing edges (regression for finding 2.1).
     expect(topOnly.rows).toBe(bottomOnly.rows)
   })
+
+  it('returns zero-area rect when tile is fully past the image bottom edge', () => {
+    const rect = computeImageRectOnTile({
+      tileImageX: 0, tileImageY: 500,
+      tileSrcW: 100, tileSrcH: 100,
+      imageWidthPx: 100, imageHeightPx: 100,
+      paperWidthMm: 100, paperHeightMm: 100
+    })
+    expect(rect.hMm).toBe(0)
+  })
 })

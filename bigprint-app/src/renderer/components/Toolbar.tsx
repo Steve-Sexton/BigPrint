@@ -26,7 +26,7 @@ export function Toolbar() {
       // If Sharp couldn't read the file at all, widthPx comes back 0
       if (meta.widthPx === 0 && meta.heightPx === 0) {
         const ext = result.filePath.split('.').pop()?.toUpperCase() ?? 'this'
-        alert(`${ext} files are not supported.\n\nSupported formats: JPEG, PNG, TIFF, WebP, BMP, GIF, SVG, PDF`)
+        alert(`${ext} files are not supported.\n\nSupported formats: JPEG, PNG, TIFF, WebP, BMP, GIF, AVIF, SVG, PDF`)
         return
       }
 
@@ -49,7 +49,7 @@ export function Toolbar() {
     } finally {
       store.setLoading(false)
     }
-  }, [])
+  }, [store])
 
   const handleExportPDF = useCallback(async () => {
     if (!source) return
@@ -98,7 +98,7 @@ export function Toolbar() {
     } finally {
       store.setLoading(false)
     }
-  }, [source, scale, tiling, grid, inkSaver, selectedPages, crop])
+  }, [store, source, scale, tiling, grid, inkSaver, selectedPages, crop])
 
   const handlePrint = useCallback(async () => {
     if (!source) return
@@ -132,7 +132,7 @@ export function Toolbar() {
     } finally {
       store.setLoading(false)
     }
-  }, [source, scale, tiling, grid, inkSaver, selectedPages, crop])
+  }, [store, source, scale, tiling, grid, inkSaver, selectedPages, crop])
 
   const handleSaveProject = useCallback(async () => {
     if (!source) return
@@ -161,7 +161,7 @@ export function Toolbar() {
     store.setTiling(data.tiling)
     store.setGrid(data.grid)
     store.setInkSaver(data.inkSaver)
-  }, [])
+  }, [store])
 
   // Drag-and-drop on the app level is handled via DOM events in App.tsx
   const btn = 'px-3 py-1.5 rounded text-sm font-medium transition-colors'

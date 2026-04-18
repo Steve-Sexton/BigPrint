@@ -1,6 +1,7 @@
 import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import path from 'path'
 import { registerAllHandlers } from './ipc/handlers'
+import { isSafeExternalUrl } from './security'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -28,10 +29,21 @@ async function createWindow(): Promise<void> {
     mainWindow?.show()
   })
 
-  // Open external links in browser
+  // Open external links in browser — scheme allowlist prevents file://, javascript:,
+  // or custom-protocol abuse from a malicious SVG/PDF or renderer compromise.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    if (isSafeExternalUrl(url)) {
+      shell.openExternal(url).catch(() => {})
+    } else {
+      console.warn('[main] Blocked window-open for unsafe URL:', url)
+    }
     return { action: 'deny' }
+  })
+
+  // Reject any top-level navigation away from the app's own origin.
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const current = mainWindow?.webContents.getURL() ?? ''
+    if (url !== current) event.preventDefault()
   })
 
   if (process.env['ELECTRON_RENDERER_URL']) {

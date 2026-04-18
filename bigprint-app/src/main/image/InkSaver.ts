@@ -5,7 +5,10 @@ export interface InkSaverInput {
   inputBuffer: Buffer
   widthPx: number
   heightPx: number
-  dpi: number             // calibrated image DPI — used to convert edgeFadeRadiusMm → px
+  /** Pixels per millimetre of the INPUT BUFFER (not the source image).
+   *  Used to convert `edgeFadeRadiusMm` → px directly and correctly regardless
+   *  of how many times the buffer has been rescaled upstream. */
+  pxPerMm: number
   settings: InkSaverSettings
 }
 
@@ -21,7 +24,7 @@ function encodeOutput(pipeline: sharp.Sharp, format: 'jpeg' | 'png'): sharp.Shar
 }
 
 export async function applyInkSaver(input: InkSaverInput): Promise<Buffer> {
-  const { inputBuffer, widthPx, heightPx, dpi, settings } = input
+  const { inputBuffer, widthPx, heightPx, pxPerMm, settings } = input
 
   if (!settings.enabled) return inputBuffer
 
@@ -40,7 +43,7 @@ export async function applyInkSaver(input: InkSaverInput): Promise<Buffer> {
 
   // Step 3: Edge-aware fading
   if (settings.edgeFadeStrength > 0 && widthPx > 0 && heightPx > 0) {
-    return applyEdgeFade(pipeline, widthPx, heightPx, dpi, settings, outputFormat)
+    return applyEdgeFade(pipeline, widthPx, heightPx, pxPerMm, settings, outputFormat)
   }
 
   return encodeOutput(pipeline, outputFormat).toBuffer()
@@ -50,13 +53,15 @@ async function applyEdgeFade(
   basePipeline: sharp.Sharp,
   widthPx: number,
   heightPx: number,
-  dpi: number,
+  pxPerMm: number,
   settings: InkSaverSettings,
   outputFormat: 'jpeg' | 'png'
 ): Promise<Buffer> {
   const strength = settings.edgeFadeStrength / 100
-  // Convert mm radius → source pixels using calibrated DPI
-  const blurRadius = Math.max(1, Math.round((settings.edgeFadeRadiusMm * dpi) / 25.4))
+  // Convert mm radius → buffer pixels directly. pxPerMm is measured on the
+  // input buffer so the same physical radius yields consistent blur regardless
+  // of upstream rescaling.
+  const blurRadius = Math.max(1, Math.round(settings.edgeFadeRadiusMm * pxPerMm))
 
   // Compute Sobel edge map from grayscale version.
   // offset: 128 shifts the convolution output so that negative gradients are

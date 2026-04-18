@@ -88,17 +88,19 @@ export function PreviewCanvas() {
 
   // Mouse wheel zoom
   const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
     e.preventDefault()
     const delta = e.deltaY > 0 ? 0.9 : 1.1
     const newZoom = Math.max(0.05, Math.min(20, store.zoom * delta))
-    const rect = canvasRef.current!.getBoundingClientRect()
+    const rect = canvas.getBoundingClientRect()
     const mx = e.clientX - rect.left
     const my = e.clientY - rect.top
     const newPanX = mx - (mx - store.panX) * (newZoom / store.zoom)
     const newPanY = my - (my - store.panY) * (newZoom / store.zoom)
     store.setZoom(newZoom)
     store.setPan(newPanX, newPanY)
-  }, [store.zoom, store.panX, store.panY])
+  }, [store.zoom, store.panX, store.panY, store.setZoom, store.setPan])
 
   // Pan dragging (middle or right button)
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null)
