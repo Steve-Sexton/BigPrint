@@ -1,7 +1,9 @@
-# Stray lockfiles (app lockfile lives in bigprint-app/)
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
+# Stray lockfiles at the repo root (app lockfile lives in bigprint-app/ and
+# MUST be tracked — CI's setup-node cache + npm ci depend on it). Leading slash
+# anchors the pattern so it doesn't match `bigprint-app/package-lock.json`.
+/package-lock.json
+/yarn.lock
+/pnpm-lock.yaml
 
 # OS artifacts
 .DS_Store
