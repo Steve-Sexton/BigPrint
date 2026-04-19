@@ -9,12 +9,12 @@
 //
 // This is intentionally a small shim, not a real logging framework.
 
-type LogLevel = 'warn' | 'error' | 'info'
+type LogLevel = 'warn' | 'error'
 
 function emit(level: LogLevel, module: string, args: unknown[]): void {
   const prefix = `[${module}]`
   // eslint-disable-next-line no-console -- this IS the wrapper
-  const fn = level === 'error' ? console.error : level === 'info' ? console.info : console.warn
+  const fn = level === 'error' ? console.error : console.warn
   fn(prefix, ...args)
 }
 
@@ -24,8 +24,5 @@ export const log = {
   },
   error(module: string, ...args: unknown[]): void {
     emit('error', module, args)
-  },
-  info(module: string, ...args: unknown[]): void {
-    emit('info', module, args)
   },
 }

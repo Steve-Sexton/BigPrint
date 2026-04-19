@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest'
-import { isSafeExternalUrl, isSameOrigin } from '../../src/main/security'
+import { describe, it, expect, beforeEach } from 'vitest'
+import {
+  isSafeExternalUrl,
+  isSameOrigin,
+  canOpenExternalNow,
+  __resetExternalOpenRateLimitForTests,
+} from '../../src/main/security'
 
 describe('isSafeExternalUrl', () => {
   it('allows http and https URLs', () => {
@@ -61,5 +66,31 @@ describe('isSameOrigin', () => {
   it('returns false for malformed URLs rather than throwing', () => {
     expect(isSameOrigin('not a url', 'file:///app/index.html')).toBe(false)
     expect(isSameOrigin('', '')).toBe(false)
+  })
+})
+
+describe('canOpenExternalNow — sliding-window rate limit', () => {
+  beforeEach(() => {
+    __resetExternalOpenRateLimitForTests()
+  })
+
+  it('allows up to 10 calls inside a 10-second window', () => {
+    for (let i = 0; i < 10; i++) {
+      expect(canOpenExternalNow(0)).toBe(true)
+    }
+  })
+
+  it('rejects the 11th call at the same instant', () => {
+    for (let i = 0; i < 10; i++) canOpenExternalNow(0)
+    // All 10 slots consumed — 11th must return false to block the renderer
+    // from spamming shell.openExternal.
+    expect(canOpenExternalNow(0)).toBe(false)
+  })
+
+  it('allows a new call after the window slides past the oldest timestamp', () => {
+    for (let i = 0; i < 10; i++) canOpenExternalNow(0)
+    // At t=10s+1ms, the slot at t=0 is outside the 10s window; the call is
+    // permitted.
+    expect(canOpenExternalNow(10_001)).toBe(true)
   })
 })

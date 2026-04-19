@@ -26,14 +26,26 @@ function unitStep(unit: OverlapUnit) {
 
 export function TilingSettings() {
   const store = useAppStore()
-  const { tiling, scale } = store
+  const { tiling } = store
   const [unit, setUnit] = useState<OverlapUnit>('mm')
 
   const handleOrientationChange = (o: 'portrait' | 'landscape') => {
     if (o === tiling.orientation) return
-    // Swap printer-scale compensation when orientation flips:
-    // the physical axes of the printer swap, so X↔Y corrections must follow.
-    store.setScale({ printerScaleX: scale.printerScaleY, printerScaleY: scale.printerScaleX })
+    // Do NOT swap printer-scale compensation on orientation change.
+    //
+    // Physically the printer's X/Y axes swap when the page is fed in the
+    // other orientation, BUT the persisted preferences round-trip through a
+    // debounced save. Two flips in quick succession (the user toggling to
+    // landscape to preview the grid, then back) would silently write the
+    // swapped values as the new baseline. The correction must remain tied to
+    // the printer's feed direction, not the UI's displayed orientation.
+    //
+    // In practice both scale factors are within a few percent of 1.00 for
+    // any reasonably-calibrated printer; leaving them untouched on flip
+    // keeps the calibration stable across orientation experiments. If a
+    // future deployment discovers the X/Y values genuinely diverge, the
+    // right fix is to store `portraitX/portraitY/landscapeX/landscapeY`
+    // as four separate fields — not a flip-based swap.
     store.setTiling({ orientation: o })
   }
 

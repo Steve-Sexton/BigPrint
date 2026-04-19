@@ -63,6 +63,13 @@ async function createWindow(): Promise<void> {
     const current = mainWindow?.webContents.getURL() ?? ''
     if (!isSameOrigin(url, current)) event.preventDefault()
   })
+  // will-navigate only fires for top-level navigations. A renderer compromise
+  // that injects an <iframe> can navigate it freely unless we also guard
+  // subframe navigations. Defense in depth alongside the CSP.
+  mainWindow.webContents.on('will-frame-navigate', event => {
+    const current = mainWindow?.webContents.getURL() ?? ''
+    if (!isSameOrigin(event.url, current)) event.preventDefault()
+  })
 
   if (process.env['ELECTRON_RENDERER_URL']) {
     await mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
@@ -89,7 +96,16 @@ function installSessionSecurity(): void {
     "style-src 'self' 'unsafe-inline'; " +
     "img-src 'self' data: blob:; " +
     "connect-src 'self'; " +
-    "worker-src 'self' blob:;"
+    "worker-src 'self' blob:; " +
+    // Tighten the default-src for the directives Chromium treats separately.
+    // base-uri 'self' prevents a renderer compromise from rewriting <base>
+    // to redirect relative resources. frame-src / object-src 'none' block
+    // legacy plugin/iframe embeds. form-action 'none' denies any form
+    // submission (the app has no forms).
+    "base-uri 'self'; " +
+    "frame-src 'none'; " +
+    "object-src 'none'; " +
+    "form-action 'none';"
 
   ses.webRequest.onHeadersReceived((details, callback) => {
     const headers = { ...(details.responseHeaders ?? {}) }

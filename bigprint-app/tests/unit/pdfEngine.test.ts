@@ -4,8 +4,9 @@ import os from 'os'
 import path from 'path'
 import sharp from 'sharp'
 import { PDFDocument } from 'pdf-lib'
-import { exportToPDF } from '../../src/main/pdf/PDFEngine'
-import type { ExportPDFParams } from '../../src/shared/ipc-types'
+import { exportToPDF, exportTestGridPDF } from '../../src/main/pdf/PDFEngine'
+import type { ExportPDFParams, TestGridParams } from '../../src/shared/ipc-types'
+import { MM_TO_PT } from '../../src/shared/constants'
 
 let tmpRoot = ''
 let sourcePath = ''
@@ -110,6 +111,34 @@ describe('exportToPDF', () => {
     expect(noCenter.success).toBe(true)
     expect(centered.success).toBe(true)
     expect(centered.pagesWritten).toBe(noCenter.pagesWritten)
+  })
+
+  it('exportTestGridPDF writes a single Letter-sized page with the calibration grid', async () => {
+    const outPath = path.join(tmpRoot, 'calgrid.pdf')
+    const params: TestGridParams = {
+      outputPath: outPath,
+      tiling: {
+        paperSizeId: 'letter', orientation: 'portrait',
+        overlapMmTop: 0, overlapMmRight: 0, overlapMmBottom: 0, overlapMmLeft: 0,
+        showOverlapArea: false, skipBlankPages: false, centerImage: false,
+      },
+      grid: {
+        showGrid: true, showGridDiagonals: false, diagonalSpacingMm: 10,
+        showCutMarks: false, showPageLabels: false, labelStyle: 'grid',
+        alignToImage: false, extendBeyondImage: true, suppressOverImage: false,
+        showScaleAnnotation: false,
+      },
+    }
+    const res = await exportTestGridPDF(params)
+    expect(res.success).toBe(true)
+    expect(res.pagesWritten).toBe(1)
+    const bytes = await fs.readFile(outPath)
+    const doc = await PDFDocument.load(bytes)
+    expect(doc.getPageCount()).toBe(1)
+    // Letter portrait = 215.9 × 279.4 mm
+    const page = doc.getPage(0)
+    expect(page.getWidth()).toBeCloseTo(215.9 * MM_TO_PT, 0)
+    expect(page.getHeight()).toBeCloseTo(279.4 * MM_TO_PT, 0)
   })
 
   it('skipBlankPages=true drops every tile that does not contain image pixels', async () => {

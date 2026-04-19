@@ -69,8 +69,9 @@ export function Toolbar() {
     try {
       // Sharp cannot read PDFs on Windows (no poppler in prebuilt binary).
       // Rasterise the page here in the renderer via PDF.js and pass the buffer.
-      // Use a minimum of 200 DPI for print quality — the default 96 DPI produces
-      // a ~816×1056px image for Letter which upscales ~3× on a 300 DPI printer.
+      // Use at least MIN_PRINT_DPI (300) for print quality — the default 96 DPI
+      // produces ~816×1056px for Letter which upscales ~3× on a 300 DPI printer
+      // and looks soft. See shared/constants.ts for the canonical value.
       let sourceBuffer: ArrayBuffer | undefined
       let exportScale = scale
       if (source.mimeType === 'application/pdf') {
@@ -145,23 +146,34 @@ export function Toolbar() {
 
   const handleSaveProject = useCallback(async () => {
     if (!source) return
-    await bridge.saveProject({
+    const res = await bridge.saveProject({
       filePath: '',
       scale,
       tiling,
       grid,
       inkSaver,
     })
+    // Distinguish the three outcomes — a boolean return would silently drop
+    // error cases (EACCES, disk full, invalid path) and leave the user
+    // believing the project was saved.
+    if (res.ok) {
+      alert(`✅ Project saved:\n${res.path}`)
+    } else if (res.reason === 'error') {
+      alert(`❌ Save failed: ${res.errorMessage}`)
+    }
+    // 'cancel' → user pressed Cancel in the save dialog — silent, as expected.
   }, [source, scale, tiling, grid, inkSaver])
 
-  // PDF page navigation — updates pdfPageIndex and clears the preview so
-  // usePDFPreview re-renders the new page via PDF.js.
+  // PDF page navigation — updates only pdfPageIndex + previewDataUrl. Uses
+  // the narrow setPdfPageIndex action instead of setSource so the user's
+  // crop / calibration / measurement state survives page flips within the
+  // same PDF.
   const handlePageChange = useCallback(
     (delta: number) => {
       if (!source || source.mimeType !== 'application/pdf') return
       const newIdx = Math.max(0, Math.min(source.pdfTotalPages - 1, source.pdfPageIndex + delta))
       if (newIdx === source.pdfPageIndex) return
-      store.setSource({ ...source, pdfPageIndex: newIdx, previewDataUrl: '' })
+      store.setPdfPageIndex(newIdx)
     },
     [source, store]
   )

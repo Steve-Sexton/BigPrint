@@ -64,6 +64,10 @@ export interface AppState {
 
 export interface AppActions {
   setSource: (source: ImageSource | null) => void
+  // Narrow update for PDF page navigation — does NOT reset crop / calibration
+  // / measurement modes the way setSource does, so the user's in-flight state
+  // survives flipping pages within the same PDF.
+  setPdfPageIndex: (pageIndex: number) => void
   setScale: (s: Partial<ScaleSettings>) => void
   setTiling: (t: Partial<TilingSettings>) => void
   setGrid: (g: Partial<GridSettings>) => void

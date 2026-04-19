@@ -8,6 +8,7 @@ import type {
   PrintResult,
   PrinterInfo,
   SaveProjectParams,
+  SaveProjectResult,
   LoadProjectResult,
   TestGridParams,
   AppPreferences,
@@ -22,7 +23,8 @@ export const bridge = {
 
   getPathForFile: (file: File): string => window.electronAPI.getPathForFile(file),
 
-  saveProject: (data: SaveProjectParams): Promise<boolean> => window.electronAPI.saveProjectDialog(data),
+  saveProject: (data: SaveProjectParams): Promise<SaveProjectResult> =>
+    window.electronAPI.saveProjectDialog(data),
 
   loadProject: (): Promise<LoadProjectResult | null> => window.electronAPI.loadProjectDialog(),
 

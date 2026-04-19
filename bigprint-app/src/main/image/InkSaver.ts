@@ -2,6 +2,12 @@ import sharp from 'sharp'
 import type { InkSaverSettings } from '../../shared/ipc-types'
 import { JPEG_TILE_QUALITY } from '../../shared/constants'
 
+// Brightness gain applied to the Sobel gradient magnitude before clamping to
+// [0, 255]. Amplifies mid-strength edges (pencil-line art, halftone dots) so
+// the blurred edge map still covers them after the subsequent Gaussian blur.
+// Tune here if edge-fade feels under- or over-aggressive across the board.
+const SOBEL_EDGE_GAIN = 2
+
 export interface InkSaverInput {
   inputBuffer: Buffer
   widthPx: number
@@ -85,7 +91,7 @@ async function applyEdgeFade(
   for (let i = 0; i < edgeMap.length; i++) {
     const gx = (sobelXBuf[i] ?? 128) - 128
     const gy = (sobelYBuf[i] ?? 128) - 128
-    edgeMap[i] = Math.min(255, Math.sqrt(gx * gx + gy * gy) * 2)
+    edgeMap[i] = Math.min(255, Math.sqrt(gx * gx + gy * gy) * SOBEL_EDGE_GAIN)
   }
 
   // Blur edge map — creates smooth proximity falloff

@@ -126,6 +126,14 @@ export interface SaveProjectParams {
   inkSaver: InkSaverSettings
 }
 
+// Discriminated result for project:save. Distinguishes cancel (user pressed
+// Cancel in the save dialog — silent) from error (path invalid, EACCES, disk
+// full — the UI should surface this) from success (show the written path).
+export type SaveProjectResult =
+  | { ok: true; path: string }
+  | { ok: false; reason: 'cancel' }
+  | { ok: false; reason: 'error'; errorMessage: string }
+
 // ── Persisted user preferences ────────────────────────────────────────────────
 // Saved to userData/preferences.json between sessions.
 // Does NOT include per-image state (dpi, outputScale, crop, selectedPages).
@@ -163,7 +171,7 @@ export interface ElectronAPICore {
   /** Admits an externally-supplied absolute path (drop / clipboard) to the
    *  session allowlist and returns the same shape as openFile. */
   registerFile: (filePath: string) => Promise<OpenFileResult>
-  saveProjectDialog: (data: SaveProjectParams) => Promise<boolean>
+  saveProjectDialog: (data: SaveProjectParams) => Promise<SaveProjectResult>
   loadProjectDialog: () => Promise<LoadProjectResult | null>
   getImageMeta: (filePath: string) => Promise<ImageMetaResult>
   getPreviewDataUrl: (filePath: string, maxSizePx: number) => Promise<string>
@@ -192,14 +200,32 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null
 }
 
+// Safety bounds on printer-scale compensation. The UI clamps to 90–110%; the
+// validator is deliberately wider (50–200%) to cover even an exotic printer
+// without letting a crafted .tilr or corrupt preferences file push the value
+// to ~0 (which would make imageWidthMm ≈ imageWidthPx / 0 → ~Infinity and
+// blow up computeTileGrid with a billion tiles) or ~huge.
+export const PRINTER_SCALE_MIN = 0.5
+export const PRINTER_SCALE_MAX = 2.0
+
 export function validateScale(v: unknown): string | null {
   if (!isObject(v)) return 'scale must be an object'
   if (!isNumber(v['dpi']) || v['dpi'] < 1 || v['dpi'] > 9600)
     return `Invalid scale.dpi (${v['dpi']}) — must be 1–9600`
   if (!isNumber(v['outputScale']) || v['outputScale'] <= 0 || v['outputScale'] > 10)
     return `Invalid scale.outputScale (${v['outputScale']}) — must be > 0 and ≤ 10`
-  if (!isNumber(v['printerScaleX']) || v['printerScaleX'] <= 0) return 'Invalid scale.printerScaleX'
-  if (!isNumber(v['printerScaleY']) || v['printerScaleY'] <= 0) return 'Invalid scale.printerScaleY'
+  if (
+    !isNumber(v['printerScaleX']) ||
+    (v['printerScaleX'] as number) < PRINTER_SCALE_MIN ||
+    (v['printerScaleX'] as number) > PRINTER_SCALE_MAX
+  )
+    return `Invalid scale.printerScaleX — must be in [${PRINTER_SCALE_MIN}, ${PRINTER_SCALE_MAX}]`
+  if (
+    !isNumber(v['printerScaleY']) ||
+    (v['printerScaleY'] as number) < PRINTER_SCALE_MIN ||
+    (v['printerScaleY'] as number) > PRINTER_SCALE_MAX
+  )
+    return `Invalid scale.printerScaleY — must be in [${PRINTER_SCALE_MIN}, ${PRINTER_SCALE_MAX}]`
   return null
 }
 
@@ -271,10 +297,18 @@ export function validateAppPreferences(data: unknown): string | null {
     data['inkSaverPreset'] !== 'custom'
   )
     return 'Invalid inkSaverPreset'
-  if (!isNumber(data['printerScaleX']) || (data['printerScaleX'] as number) <= 0)
-    return 'Invalid printerScaleX'
-  if (!isNumber(data['printerScaleY']) || (data['printerScaleY'] as number) <= 0)
-    return 'Invalid printerScaleY'
+  if (
+    !isNumber(data['printerScaleX']) ||
+    (data['printerScaleX'] as number) < PRINTER_SCALE_MIN ||
+    (data['printerScaleX'] as number) > PRINTER_SCALE_MAX
+  )
+    return `Invalid printerScaleX — must be in [${PRINTER_SCALE_MIN}, ${PRINTER_SCALE_MAX}]`
+  if (
+    !isNumber(data['printerScaleY']) ||
+    (data['printerScaleY'] as number) < PRINTER_SCALE_MIN ||
+    (data['printerScaleY'] as number) > PRINTER_SCALE_MAX
+  )
+    return `Invalid printerScaleY — must be in [${PRINTER_SCALE_MIN}, ${PRINTER_SCALE_MAX}]`
   return null
 }
 
@@ -290,6 +324,60 @@ export function validateFileFilters(v: unknown): string | null {
       if (typeof ext !== 'string') return `filters[${i}].extensions[${j}] must be a string`
     }
   }
+  return null
+}
+
+// Maximum pixel dimensions accepted on a cropRect. Mirrors MAX_SOURCE_IMAGE_PX
+// in shared/constants.ts without the import cycle — keep the two in sync if
+// the source-image ceiling ever changes.
+const MAX_CROP_DIMENSION_PX = 20000
+
+// Maximum byte size accepted on an inline sourceBuffer (PDF-on-Windows
+// rasterisation and clipboard images). Mirrors MAX_REGISTER_BYTES.
+const MAX_SOURCE_BUFFER_BYTES = 500 * 1024 * 1024
+
+export function validateEnabledPages(v: unknown): string | null {
+  if (v === null || v === undefined) return null
+  if (!Array.isArray(v)) return 'enabledPages must be an array or null'
+  // Every row must itself be an array of booleans. Jagged rows are rejected
+  // so PDFEngine's row/col iteration doesn't have to defend against non-array
+  // rows or non-boolean cells at runtime.
+  const firstLen = Array.isArray(v[0]) ? (v[0] as unknown[]).length : null
+  for (let r = 0; r < v.length; r++) {
+    const row = v[r]
+    if (!Array.isArray(row)) return `enabledPages[${r}] must be an array`
+    if (firstLen !== null && row.length !== firstLen)
+      return `enabledPages[${r}] length ${row.length} differs from row 0 (${firstLen})`
+    for (let c = 0; c < row.length; c++) {
+      if (typeof row[c] !== 'boolean') return `enabledPages[${r}][${c}] must be a boolean`
+    }
+  }
+  return null
+}
+
+export function validateCropRect(v: unknown): string | null {
+  if (v === null || v === undefined) return null
+  if (!isObject(v)) return 'cropRect must be an object'
+  for (const k of ['srcX', 'srcY', 'srcW', 'srcH'] as const) {
+    const n = v[k]
+    if (!isNumber(n) || n < 0 || n > MAX_CROP_DIMENSION_PX)
+      return `Invalid cropRect.${k} — must be in [0, ${MAX_CROP_DIMENSION_PX}]`
+  }
+  const srcW = v['srcW'] as number
+  const srcH = v['srcH'] as number
+  if (srcW <= 0 || srcH <= 0) return 'cropRect.srcW/srcH must be > 0'
+  return null
+}
+
+export function validateSourceBuffer(v: unknown): string | null {
+  if (v === null || v === undefined) return null
+  // Accept only an ArrayBuffer — not a SharedArrayBuffer, not a TypedArray,
+  // not a Node Buffer. Structured-clone across the context bridge produces a
+  // plain ArrayBuffer, so anything else crossing the IPC boundary is anomalous.
+  if (!(v instanceof ArrayBuffer)) return 'sourceBuffer must be an ArrayBuffer'
+  if (v.byteLength === 0) return 'sourceBuffer must not be empty'
+  if (v.byteLength > MAX_SOURCE_BUFFER_BYTES)
+    return `sourceBuffer too large (${v.byteLength} bytes, max ${MAX_SOURCE_BUFFER_BYTES})`
   return null
 }
 
@@ -309,5 +397,15 @@ export function validateExportParams(v: unknown, requireOutputPath = false): str
   if (g) return g
   const i = validateInkSaver(v['inkSaver'])
   if (i) return i
+  const e = validateEnabledPages(v['enabledPages'])
+  if (e) return e
+  const cr = validateCropRect(v['cropRect'])
+  if (cr) return cr
+  const sb = validateSourceBuffer(v['sourceBuffer'])
+  if (sb) return sb
+  if (v['pdfPageIndex'] !== undefined) {
+    if (!isNumber(v['pdfPageIndex']) || (v['pdfPageIndex'] as number) < 0 || (v['pdfPageIndex'] as number) > 100000)
+      return 'Invalid pdfPageIndex'
+  }
   return null
 }
