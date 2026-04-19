@@ -86,12 +86,30 @@ export const useAppStore = create<AppState & AppActions>()(
     setSource: source =>
       set(s => {
         s.source = source
-        // Clear crop and page selection when a new image is loaded
+        // Clear crop, page selection, and every interactive mode when a new
+        // image is loaded. Without the mode resets, a user who pastes a new
+        // image while mid-crop-drag or mid-calibration carries those modal
+        // states into the new image with stale pixel coordinates referencing
+        // the previous file's dimensions.
         s.crop = null
         s.cropMode = 'idle'
         s.cropAnchor = null
         s.cropCurrent = null
         s.selectedPages = null
+        s.calibrationMode = 'idle'
+        s.calibrationPoint1 = null
+        s.calibrationPoint2 = null
+        s.showCalibrationDialog = false
+        s.measureMode = 'idle'
+        s.measurePoint1 = null
+        s.measurePoint2 = null
+      }),
+    setPdfPageIndex: pageIndex =>
+      set(s => {
+        if (!s.source) return
+        s.source.pdfPageIndex = pageIndex
+        // Clear the cached preview so usePDFPreview re-renders the new page.
+        s.source.previewDataUrl = ''
       }),
     setScale: scale =>
       set(s => {

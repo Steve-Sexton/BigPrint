@@ -47,6 +47,13 @@ export async function printDirect(win: BrowserWindow, params: PrintParams): Prom
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
+        // Defense in depth: set these explicitly rather than relying on
+        // Electron defaults. If a future refactor registers a global
+        // `app.on('web-contents-created', …)` preload injection, the print
+        // window will still start preload-free.
+        preload: undefined,
+        webSecurity: true,
+        allowRunningInsecureContent: false,
       },
     })
     let winClosed = false

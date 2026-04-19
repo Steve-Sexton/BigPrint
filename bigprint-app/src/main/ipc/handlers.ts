@@ -2,10 +2,12 @@ import fs from 'fs/promises'
 import path from 'path'
 import { ipcMain, dialog, BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import { PDFDocument } from 'pdf-lib'
+import { log } from '../../shared/log'
 import type {
   ExportPDFParams,
   PrintParams,
   SaveProjectParams,
+  SaveProjectResult,
   TestGridParams,
   AppPreferences,
 } from '../../shared/ipc-types'
@@ -67,9 +69,12 @@ async function renderPDFPageDataUrl(filePath: string, pageIndex: number, scale: 
       .png()
       .toBuffer()
     return `data:image/png;base64,${buf.toString('base64')}`
-  } catch {
-    // Sharp lacks poppler on this build — signal the renderer to rasterise
-    // the page via PDF.js instead (usePDFPreview.ts handles the fallback).
+  } catch (err) {
+    // Sharp lacks poppler on this build (Windows) OR the file is unreadable /
+    // corrupt / the page doesn't exist. In all cases we return '' so the
+    // renderer falls back to its own PDF.js pipeline. Log at warn level so
+    // operators debugging "preview unavailable" can see the real cause.
+    log.warn('ipc', 'renderPDFPageDataUrl Sharp fallback:', err)
     return ''
   }
 }
@@ -94,11 +99,18 @@ const allowRead = (p: string): void => {
 }
 const isReadAllowed = (p: string): boolean => allowedReadPaths.has(path.normalize(p))
 
+// Session-lifetime counter for file:register. Hoisted to module scope so
+// __resetHandlerStateForTests can reset it — otherwise the closure captured
+// inside registerAllHandlers would accumulate across test runs and cause
+// flaky ordering-dependent failures.
+let registerCount = 0
+
 // Exposed for unit tests that need to reset state between runs.
 export function __resetHandlerStateForTests(): void {
   allowedReadPaths.clear()
   activeWindow = null
-  pdfBytesFetchCount.clear()
+  pdfBytesFetchTimestamps.clear()
+  registerCount = 0
 }
 
 // ── Size ceiling for IPC file reads ────────────────────────────────────────
@@ -106,17 +118,38 @@ export function __resetHandlerStateForTests(): void {
 // pdf:getBytes / pdf:getPageCount enforce the same cap.
 const MAX_IPC_FILE_BYTES = MAX_REGISTER_BYTES
 
-// Per-path fetch cap for pdf:getBytes. A compromised renderer could otherwise
-// re-read an admitted file arbitrarily many times to exfiltrate via local
-// storage / postMessage. Five fetches is enough for normal UX (preview + export
-// + print + retry + slack) while detecting loop abuse.
-const MAX_PDF_FETCHES_PER_PATH = 5
-const pdfBytesFetchCount = new Map<string, number>()
-function recordAndCheckPdfFetch(p: string): void {
-  const n = (pdfBytesFetchCount.get(p) ?? 0) + 1
-  pdfBytesFetchCount.set(p, n)
-  if (n > MAX_PDF_FETCHES_PER_PATH) {
-    throw new Error(`Too many pdf:getBytes fetches for this path (${n})`)
+// Rolling-window rate limit for pdf:getBytes. A compromised renderer could
+// otherwise re-read an admitted file arbitrarily many times to exfiltrate via
+// local storage / postMessage. A fixed lifetime cap broke normal UX — the
+// window approach blocks abuse loops while letting ordinary flows (preview →
+// page-nav → export → print → retry → edit-and-re-export) complete freely.
+const PDF_FETCH_WINDOW_MS = 60_000
+const PDF_FETCH_MAX_PER_WINDOW = 20
+// Entries older than PDF_FETCH_GC_MS with zero timestamps are pruned on each
+// call so the map can't grow unbounded across a long session of opening many
+// files.
+const PDF_FETCH_GC_MS = 5 * 60_000
+const pdfBytesFetchTimestamps = new Map<string, number[]>()
+function recordAndCheckPdfFetch(p: string, nowMs: number = Date.now()): void {
+  // Drop timestamps outside the sliding window for THIS path.
+  const windowStart = nowMs - PDF_FETCH_WINDOW_MS
+  const prev = pdfBytesFetchTimestamps.get(p) ?? []
+  const fresh = prev.filter(t => t > windowStart)
+  if (fresh.length >= PDF_FETCH_MAX_PER_WINDOW) {
+    throw new Error(
+      `Too many pdf:getBytes fetches for this path (${fresh.length + 1} in ${PDF_FETCH_WINDOW_MS}ms)`
+    )
+  }
+  fresh.push(nowMs)
+  pdfBytesFetchTimestamps.set(p, fresh)
+
+  // Opportunistic GC: forget any path whose newest timestamp is older than
+  // PDF_FETCH_GC_MS. Bounds the map size across a long-running session.
+  const gcCutoff = nowMs - PDF_FETCH_GC_MS
+  for (const [key, ts] of pdfBytesFetchTimestamps) {
+    if (ts.length === 0 || (ts[ts.length - 1] ?? 0) < gcCutoff) {
+      pdfBytesFetchTimestamps.delete(key)
+    }
   }
 }
 
@@ -185,7 +218,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
   // This does not fully replace a trusted-drop channel from the main process
   // but narrows the attack surface materially compared to admitting any
   // absolute path.
-  let registerCount = 0
   ipcMain.handle('file:register', async (event, filePath: unknown) => {
     guard(event)
     const p = assertFilePath(filePath)
@@ -209,14 +241,19 @@ export function registerAllHandlers(win: BrowserWindow): void {
   })
 
   // ── Save project dialog ────────────────────────────────────────────────
-  ipcMain.handle('project:save', async (event, rawData: unknown) => {
+  // Returns a discriminated union so the renderer can distinguish a user
+  // cancel (silent) from a genuine error (toast) from a success (confirm the
+  // written path). Previous boolean return type swallowed every failure.
+  ipcMain.handle('project:save', async (event, rawData: unknown): Promise<SaveProjectResult> => {
     guard(event)
     try {
-      if (!rawData || typeof rawData !== 'object') return false
+      if (!rawData || typeof rawData !== 'object') {
+        return { ok: false, reason: 'error', errorMessage: 'Invalid params' }
+      }
       const data = rawData as SaveProjectParams
       // Basic shape check — validateExportParams covers scale/tiling/grid/inkSaver
       const err = validateExportParams({ ...data, outputPath: data.filePath })
-      if (err) return false
+      if (err) return { ok: false, reason: 'error', errorMessage: err }
       let filePath = data.filePath
       if (!filePath) {
         const res = await dialog.showSaveDialog(currentWin(), {
@@ -224,15 +261,15 @@ export function registerAllHandlers(win: BrowserWindow): void {
           defaultPath: 'project.tilr',
           filters: [{ name: 'BigPrint Project', extensions: ['tilr'] }],
         })
-        if (res.canceled || !res.filePath) return false
+        if (res.canceled || !res.filePath) return { ok: false, reason: 'cancel' }
         filePath = res.filePath
       } else if (!isValidFilePath(filePath)) {
-        return false
+        return { ok: false, reason: 'error', errorMessage: 'Invalid output path' }
       }
       await saveProject(filePath, data)
-      return true
-    } catch {
-      return false
+      return { ok: true, path: filePath }
+    } catch (err) {
+      return { ok: false, reason: 'error', errorMessage: String(err) }
     }
   })
 
@@ -298,12 +335,17 @@ export function registerAllHandlers(win: BrowserWindow): void {
     if (stat.size > MAX_IPC_FILE_BYTES) {
       throw new Error(`File too large to read (${stat.size} bytes, max ${MAX_IPC_FILE_BYTES})`)
     }
+    const bytes = await fs.readFile(p)
     try {
-      const bytes = await fs.readFile(p)
+      // ignoreEncryption:true already handles encrypted PDFs — pdf-lib returns
+      // a usable document with its page count visible. If that still throws,
+      // the PDF structure itself is malformed (truncated, corrupt header,
+      // wrong magic) and the caller deserves to see the real error rather
+      // than a phantom "1 page" fallback that hides the root cause.
       const doc = await PDFDocument.load(bytes, { ignoreEncryption: true })
       return doc.getPageCount()
-    } catch {
-      return 1 // fallback for encrypted / unreadable PDFs
+    } catch (err) {
+      throw new Error(`Could not parse PDF: ${String(err)}`)
     }
   })
 
@@ -396,10 +438,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
   })
 
   // ── System printers ────────────────────────────────────────────────────
-  // webContents.getPrintersAsync was deprecated in Electron 21 and removed in
-  // Electron 28+. This app targets Electron 40, so the API is unavailable at
-  // runtime and we always return the default-printer sentinel. The UI uses
-  // `deviceName: ''` against this sentinel to drive the OS default printer.
+  // webContents.getPrinters / getPrintersAsync were removed from Electron's
+  // public API (deprecated earlier, dropped in Electron 22+). This app
+  // targets Electron 40, so the API is unavailable at runtime and we always
+  // return the default-printer sentinel. The UI uses `deviceName: ''`
+  // against this sentinel to drive the OS default printer.
   ipcMain.handle('print:getPrinters', async event => {
     guard(event)
     return [{ name: '', displayName: 'System default printer' }]

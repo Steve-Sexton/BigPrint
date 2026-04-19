@@ -17,9 +17,15 @@ export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult
     const labelFont = await pdfDoc.embedFont(StandardFonts.Helvetica)
     const paper = getPaperSize(params.tiling.paperSizeId, params.tiling.orientation)
 
-    // When a pre-rasterised buffer is provided (PDF source on Windows where Sharp
-    // lacks poppler), use it directly.  Otherwise fall back to Sharp's native
-    // PDF support (available on Linux/macOS with libvips-poppler).
+    // When a pre-rasterised or in-memory buffer is provided, use it directly.
+    // Two flows hit this path:
+    //   1. PDF source on Windows (Sharp lacks poppler there, so the renderer
+    //      rasterises via PDF.js and passes the PNG bytes).
+    //   2. Clipboard image (no on-disk path — the raw bytes captured at paste
+    //      time are forwarded verbatim so the full-resolution original is
+    //      preserved regardless of the preview pipeline).
+    // Otherwise fall back to Sharp's native PDF/image file read (available on
+    // Linux/macOS with libvips-poppler for PDFs).
     const isPdfSource = params.sourceFile.toLowerCase().endsWith('.pdf')
     const sharpSourceOpts = isPdfSource
       ? { page: params.pdfPageIndex ?? 0, density: Math.round(params.scale.dpi) }
