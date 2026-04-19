@@ -1,18 +1,19 @@
+import fs from 'fs/promises'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import sharp from 'sharp'
-import fs from 'fs/promises'
 import type { ExportPDFParams, ExportResult, TestGridParams } from '../../shared/ipc-types'
 import { computeTileGrid, computeImageRectOnTile, type TileRect } from '../../shared/TilingCalculator'
-import { getPaperSize, MM_TO_PT } from '../../shared/constants'
+import { getPaperSize, MM_TO_PT, JPEG_TILE_QUALITY } from '../../shared/constants'
 import { applyInkSaver } from '../image/InkSaver'
 import { renderGridOnPage } from './GridRenderer'
 
 export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult> {
   try {
     const pdfDoc = await PDFDocument.create()
-    // Embed Helvetica once per document so page labels (drawText) render in all
-    // PDF viewers and printers.  Without an embedded font, pdf-lib silently
-    // drops any drawText call that doesn't specify a font object.
+    // Embed Helvetica once per document so every drawText call in this export
+    // shares a single font object. pdf-lib otherwise embeds its implicit
+    // default on each drawText invocation, which bloats the output PDF and
+    // slows export on multi-page tile grids.
     const labelFont = await pdfDoc.embedFont(StandardFonts.Helvetica)
     const paper = getPaperSize(params.tiling.paperSizeId, params.tiling.orientation)
 
@@ -137,7 +138,7 @@ export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult
               background: { r: 255, g: 255, b: 255 },
             },
           })
-            .jpeg({ quality: 95 })
+            .jpeg({ quality: JPEG_TILE_QUALITY })
             .toBuffer()
         } else {
           tileBuffer = await sharpInput()
@@ -149,7 +150,7 @@ export async function exportToPDF(params: ExportPDFParams): Promise<ExportResult
               right: padRight,
               background: { r: 255, g: 255, b: 255, alpha: 1 },
             })
-            .jpeg({ quality: 95 })
+            .jpeg({ quality: JPEG_TILE_QUALITY })
             .toBuffer()
         }
 
@@ -279,7 +280,7 @@ export async function exportTestGridPDF(params: TestGridParams): Promise<ExportR
     // Render horizontal+vertical grid only (no diagonals) — a square grid is
     // required for accurate ruler measurement on the calibration sheet.
     const gridForTest = { ...params.grid, showGrid: true, showGridDiagonals: false, showPageLabels: false }
-    const fakeTile: TileRect = { srcX: 0, srcY: 0, srcW: 0, srcH: 0, row: 0, col: 0, isBlank: false }
+    const fakeTile: TileRect = { srcX: 0, srcY: 0, srcW: 0, srcH: 0, row: 0, col: 0 }
 
     renderGridOnPage({
       page: pdfPage,

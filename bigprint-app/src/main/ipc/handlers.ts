@@ -1,6 +1,6 @@
-import { ipcMain, dialog, BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import fs from 'fs/promises'
 import path from 'path'
+import { ipcMain, dialog, BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import { PDFDocument } from 'pdf-lib'
 import type {
   ExportPDFParams,
@@ -8,20 +8,30 @@ import type {
   SaveProjectParams,
   TestGridParams,
   AppPreferences,
-  FileFilter,
 } from '../../shared/ipc-types'
 import {
   validateAppPreferences,
   validateExportParams,
   validateTiling,
   validateGrid,
+  validateFileFilters,
 } from '../../shared/ipc-types'
 import { getImageMeta, getPreviewDataUrl, getSupportedMimeType } from '../image/ImagePipeline'
 import { exportToPDF, exportTestGridPDF } from '../pdf/PDFEngine'
 import { printDirect } from '../print/PrintManager'
 import { PreferencesStore } from '../preferences/PreferencesStore'
 import { saveProject, loadProject } from '../project/ProjectFile'
-import { SUPPORTED_INPUT_EXTENSIONS } from '../../shared/constants'
+import {
+  SUPPORTED_INPUT_EXTENSIONS,
+  MAX_REGISTER_PER_SESSION,
+  MAX_REGISTER_BYTES,
+} from '../../shared/constants'
+
+// ── Runtime helpers for IPC argument validation ─────────────────────────────
+// IPC arguments from the renderer cross a trust boundary. Handler param types
+// are declared `unknown` and narrowed through the validators below.
+const isFiniteNumberInRange = (v: unknown, min: number, max: number): v is number =>
+  typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max
 
 // ── File path validation ───────────────────────────────────────────────────────
 // IPC handlers receive file paths from the renderer. Even with contextIsolation
@@ -44,8 +54,10 @@ export function assertFilePath(filePath: unknown): string {
 }
 
 // Render a PDF page to a PNG data URL via Sharp (requires libvips-poppler).
-// Returns '' when unavailable (common on Windows), where the renderer falls
-// back to PDF.js in usePDFPreview.ts.
+// Returns '' when unavailable (common on Windows). PreviewCanvas.tsx detects
+// the empty URL and switches to the renderer-side PDF.js pipeline via
+// usePDFPreview.ts (which fetches raw bytes over pdf:getBytes and rasterises
+// in the renderer's own canvas).
 // PDF points are 1/72 inch — match the renderer-side pdfRasterize which uses
 // the same 72-DPI base so preview and export raster resolutions agree.
 async function renderPDFPageDataUrl(filePath: string, pageIndex: number, scale: number): Promise<string> {
@@ -86,6 +98,26 @@ const isReadAllowed = (p: string): boolean => allowedReadPaths.has(path.normaliz
 export function __resetHandlerStateForTests(): void {
   allowedReadPaths.clear()
   activeWindow = null
+  pdfBytesFetchCount.clear()
+}
+
+// ── Size ceiling for IPC file reads ────────────────────────────────────────
+// Shared with file:register via MAX_REGISTER_BYTES in shared/constants.ts so
+// pdf:getBytes / pdf:getPageCount enforce the same cap.
+const MAX_IPC_FILE_BYTES = MAX_REGISTER_BYTES
+
+// Per-path fetch cap for pdf:getBytes. A compromised renderer could otherwise
+// re-read an admitted file arbitrarily many times to exfiltrate via local
+// storage / postMessage. Five fetches is enough for normal UX (preview + export
+// + print + retry + slack) while detecting loop abuse.
+const MAX_PDF_FETCHES_PER_PATH = 5
+const pdfBytesFetchCount = new Map<string, number>()
+function recordAndCheckPdfFetch(p: string): void {
+  const n = (pdfBytesFetchCount.get(p) ?? 0) + 1
+  pdfBytesFetchCount.set(p, n)
+  if (n > MAX_PDF_FETCHES_PER_PATH) {
+    throw new Error(`Too many pdf:getBytes fetches for this path (${n})`)
+  }
 }
 
 let handlersRegistered = false
@@ -153,8 +185,6 @@ export function registerAllHandlers(win: BrowserWindow): void {
   // This does not fully replace a trusted-drop channel from the main process
   // but narrows the attack surface materially compared to admitting any
   // absolute path.
-  const MAX_REGISTER_PER_SESSION = 50
-  const MAX_REGISTER_BYTES = 500 * 1024 * 1024 // 500 MB
   let registerCount = 0
   ipcMain.handle('file:register', async (event, filePath: unknown) => {
     guard(event)
@@ -179,9 +209,11 @@ export function registerAllHandlers(win: BrowserWindow): void {
   })
 
   // ── Save project dialog ────────────────────────────────────────────────
-  ipcMain.handle('project:save', async (event, data: SaveProjectParams) => {
+  ipcMain.handle('project:save', async (event, rawData: unknown) => {
     guard(event)
     try {
+      if (!rawData || typeof rawData !== 'object') return false
+      const data = rawData as SaveProjectParams
       // Basic shape check — validateExportParams covers scale/tiling/grid/inkSaver
       const err = validateExportParams({ ...data, outputPath: data.filePath })
       if (err) return false
@@ -222,7 +254,7 @@ export function registerAllHandlers(win: BrowserWindow): void {
   })
 
   // ── Image metadata ─────────────────────────────────────────────────────
-  ipcMain.handle('image:getMeta', async (event, filePath: string) => {
+  ipcMain.handle('image:getMeta', async (event, filePath: unknown) => {
     guard(event)
     const p = assertFilePath(filePath)
     if (!isReadAllowed(p)) throw new Error('File path is not in the session allowlist')
@@ -230,27 +262,43 @@ export function registerAllHandlers(win: BrowserWindow): void {
   })
 
   // ── Preview data URL ───────────────────────────────────────────────────
-  ipcMain.handle('image:getPreview', async (event, filePath: string, maxSizePx: number) => {
+  ipcMain.handle('image:getPreview', async (event, filePath: unknown, maxSizePx: unknown) => {
     guard(event)
     const p = assertFilePath(filePath)
     if (!isReadAllowed(p)) throw new Error('File path is not in the session allowlist')
+    if (!isFiniteNumberInRange(maxSizePx, 1, 16384)) {
+      throw new Error(`Invalid maxSizePx: ${JSON.stringify(maxSizePx)}`)
+    }
     return getPreviewDataUrl(p, maxSizePx)
   })
 
   // ── PDF page render ────────────────────────────────────────────────────
-  ipcMain.handle('pdf:renderPage', async (event, filePath: string, pageIndex: number, scale: number) => {
+  ipcMain.handle('pdf:renderPage', async (event, filePath: unknown, pageIndex: unknown, scale: unknown) => {
     guard(event)
     const p = assertFilePath(filePath)
     if (!isReadAllowed(p)) throw new Error('File path is not in the session allowlist')
+    if (!isFiniteNumberInRange(pageIndex, 0, 100000)) {
+      throw new Error(`Invalid pageIndex: ${JSON.stringify(pageIndex)}`)
+    }
+    if (!isFiniteNumberInRange(scale, 0.01, 100)) {
+      throw new Error(`Invalid scale: ${JSON.stringify(scale)}`)
+    }
     return renderPDFPageDataUrl(p, pageIndex, scale)
   })
 
   // ── PDF page count ─────────────────────────────────────────────────────
-  ipcMain.handle('pdf:getPageCount', async (event, filePath: string) => {
+  ipcMain.handle('pdf:getPageCount', async (event, filePath: unknown) => {
     guard(event)
+    // assertFilePath and the allowlist check intentionally run OUTSIDE the
+    // try/catch below: a guard/assertion failure is a security signal, not an
+    // encrypted-PDF fallback case, and must surface to the caller.
+    const p = assertFilePath(filePath)
+    if (!isReadAllowed(p)) throw new Error('File path is not in the session allowlist')
+    const stat = await fs.stat(p)
+    if (stat.size > MAX_IPC_FILE_BYTES) {
+      throw new Error(`File too large to read (${stat.size} bytes, max ${MAX_IPC_FILE_BYTES})`)
+    }
     try {
-      const p = assertFilePath(filePath)
-      if (!isReadAllowed(p)) throw new Error('File path is not in the session allowlist')
       const bytes = await fs.readFile(p)
       const doc = await PDFDocument.load(bytes, { ignoreEncryption: true })
       return doc.getPageCount()
@@ -262,10 +310,21 @@ export function registerAllHandlers(win: BrowserWindow): void {
   // ── PDF raw bytes — lets the renderer run PDF.js without a file:// URL ──
   // Avoids cross-origin security blocks when the renderer is on http://localhost
   // during development (electron-vite dev mode).
-  ipcMain.handle('pdf:getBytes', async (event, filePath: string) => {
+  ipcMain.handle('pdf:getBytes', async (event, filePath: unknown) => {
     guard(event)
     const p = assertFilePath(filePath)
     if (!isReadAllowed(p)) throw new Error('File path is not in the session allowlist')
+    // Only .pdf paths — this channel streams raw bytes to the renderer for
+    // PDF.js, so non-PDF extensions are an anomaly not a legitimate request.
+    if (path.extname(p).toLowerCase() !== '.pdf') {
+      throw new Error(`pdf:getBytes rejected non-PDF path: ${JSON.stringify(p)}`)
+    }
+    // Cap repeat fetches to detect loop exfiltration.
+    recordAndCheckPdfFetch(p)
+    const stat = await fs.stat(p)
+    if (stat.size > MAX_IPC_FILE_BYTES) {
+      throw new Error(`File too large to read (${stat.size} bytes, max ${MAX_IPC_FILE_BYTES})`)
+    }
     const buf = await fs.readFile(p)
     // Copy into a fresh ArrayBuffer (not a Buffer view of ArrayBufferLike) so
     // the static type is unambiguously ArrayBuffer (no SharedArrayBuffer risk)
@@ -276,10 +335,14 @@ export function registerAllHandlers(win: BrowserWindow): void {
   })
 
   // ── Export PDF ─────────────────────────────────────────────────────────
-  ipcMain.handle('export:pdf', async (event, params: ExportPDFParams) => {
+  ipcMain.handle('export:pdf', async (event, rawParams: unknown) => {
     guard(event)
-    const verr = validateExportParams(params)
+    if (!rawParams || typeof rawParams !== 'object') {
+      return { success: false, errorMessage: 'Invalid params' }
+    }
+    const verr = validateExportParams(rawParams)
     if (verr) return { success: false, errorMessage: verr }
+    let params = rawParams as ExportPDFParams
     if (!params.outputPath) {
       const res = await dialog.showSaveDialog(currentWin(), {
         title: 'Export PDF',
@@ -295,12 +358,16 @@ export function registerAllHandlers(win: BrowserWindow): void {
   })
 
   // ── Export test grid (calibration page — no image source) ──────────────
-  ipcMain.handle('export:testgrid', async (event, params: TestGridParams) => {
+  ipcMain.handle('export:testgrid', async (event, rawParams: unknown) => {
     guard(event)
+    if (!rawParams || typeof rawParams !== 'object') {
+      return { success: false, errorMessage: 'Invalid params' }
+    }
+    let params = rawParams as TestGridParams
     // TestGridParams has no scale/inkSaver — validate tiling/grid only.
-    const terr = validateTiling(params?.tiling)
+    const terr = validateTiling(params.tiling)
     if (terr) return { success: false, errorMessage: terr }
-    const gerr = validateGrid(params?.grid)
+    const gerr = validateGrid(params.grid)
     if (gerr) return { success: false, errorMessage: gerr }
     if (!params.outputPath) {
       const res = await dialog.showSaveDialog(currentWin(), {
@@ -317,35 +384,25 @@ export function registerAllHandlers(win: BrowserWindow): void {
   })
 
   // ── Print ──────────────────────────────────────────────────────────────
-  ipcMain.handle('print:direct', async (event, params: PrintParams) => {
+  ipcMain.handle('print:direct', async (event, rawParams: unknown) => {
     guard(event)
+    if (!rawParams || typeof rawParams !== 'object') {
+      return { success: false, errorMessage: 'Invalid params' }
+    }
+    const params = rawParams as PrintParams
     const verr = validateExportParams({ ...params, outputPath: '' })
     if (verr) return { success: false, errorMessage: verr }
     return printDirect(currentWin(), params)
   })
 
   // ── System printers ────────────────────────────────────────────────────
-  // webContents.getPrintersAsync is deprecated and may be removed in a future
-  // Electron major. Wrap in a try/catch that returns a minimal fallback so the
-  // UI can still drive the OS default printer via `deviceName: ''`.
+  // webContents.getPrintersAsync was deprecated in Electron 21 and removed in
+  // Electron 28+. This app targets Electron 40, so the API is unavailable at
+  // runtime and we always return the default-printer sentinel. The UI uses
+  // `deviceName: ''` against this sentinel to drive the OS default printer.
   ipcMain.handle('print:getPrinters', async event => {
     guard(event)
-    try {
-      const wc = currentWin().webContents as unknown as {
-        getPrintersAsync?: () => Promise<Array<{ name: string; displayName?: string }>>
-      }
-      if (typeof wc.getPrintersAsync !== 'function') {
-        return [{ name: '', displayName: 'System default printer' }]
-      }
-      const printers = await wc.getPrintersAsync()
-      return printers.map(p => ({
-        name: p.name,
-        displayName: p.displayName ?? p.name,
-      }))
-    } catch (err) {
-      console.warn('[ipc] getPrintersAsync failed; falling back to default:', err)
-      return [{ name: '', displayName: 'System default printer' }]
-    }
+    return [{ name: '', displayName: 'System default printer' }]
   })
 
   // ── Preferences ────────────────────────────────────────────────────────────
@@ -353,17 +410,25 @@ export function registerAllHandlers(win: BrowserWindow): void {
     guard(event)
     return PreferencesStore.load()
   })
-  ipcMain.handle('preferences:save', async (event, prefs: AppPreferences) => {
+  ipcMain.handle('preferences:save', async (event, prefs: unknown) => {
     guard(event)
     const err = validateAppPreferences(prefs)
     if (err) throw new Error(`Invalid preferences: ${err}`)
-    await PreferencesStore.save(prefs)
+    await PreferencesStore.save(prefs as AppPreferences)
   })
 
   // ── Save dialog (generic) ──────────────────────────────────────────────
-  ipcMain.handle('dialog:showSave', async (event, defaultName: string, filters: FileFilter[]) => {
+  ipcMain.handle('dialog:showSave', async (event, defaultName: unknown, filters: unknown) => {
     guard(event)
-    const res = await dialog.showSaveDialog(currentWin(), { defaultPath: defaultName, filters })
+    if (typeof defaultName !== 'string') {
+      throw new Error(`Invalid defaultName: ${JSON.stringify(defaultName)}`)
+    }
+    const ferr = validateFileFilters(filters)
+    if (ferr) throw new Error(`Invalid filters: ${ferr}`)
+    const res = await dialog.showSaveDialog(currentWin(), {
+      defaultPath: defaultName,
+      filters: filters as { name: string; extensions: string[] }[],
+    })
     return res.canceled ? null : res.filePath
   })
 }

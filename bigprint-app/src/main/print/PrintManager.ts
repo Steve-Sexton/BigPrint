@@ -1,10 +1,15 @@
-import { BrowserWindow } from 'electron'
 import os from 'os'
 import path from 'path'
 import fs from 'fs/promises'
 import { pathToFileURL } from 'node:url'
+import { BrowserWindow } from 'electron'
 import type { PrintParams, PrintResult } from '../../shared/ipc-types'
 import { exportToPDF } from '../pdf/PDFEngine'
+
+// Upper bound on how long we wait for webContents.print's callback. Without
+// this, a stalled native print dialog would keep the hidden print window alive
+// forever (the finally block only fires after the print promise settles).
+const PRINT_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
 
 export async function printDirect(win: BrowserWindow, params: PrintParams): Promise<PrintResult> {
   try {
@@ -55,7 +60,7 @@ export async function printDirect(win: BrowserWindow, params: PrintParams): Prom
       // pathToFileURL handles Windows backslashes, drive letters, spaces, and
       // non-ASCII characters; naive `file://${tmpPath}` concat does not.
       await printWin.loadURL(pathToFileURL(tmpPath).href)
-      await new Promise<void>((resolve, reject) => {
+      const printPromise = new Promise<void>((resolve, reject) => {
         printWin.webContents.print(
           {
             silent: false,
@@ -69,6 +74,21 @@ export async function printDirect(win: BrowserWindow, params: PrintParams): Prom
           }
         )
       })
+      // Race against a timeout so a stalled native print dialog can't keep the
+      // hidden print window alive indefinitely. The finally block below still
+      // closes the window and removes the temp file on either outcome.
+      let timeoutId: ReturnType<typeof setTimeout> | undefined
+      const timeoutPromise = new Promise<void>((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error(`Print timed out after ${PRINT_TIMEOUT_MS}ms`)),
+          PRINT_TIMEOUT_MS
+        )
+      })
+      try {
+        await Promise.race([printPromise, timeoutPromise])
+      } finally {
+        if (timeoutId !== undefined) clearTimeout(timeoutId)
+      }
     } finally {
       closeWin()
       // Always remove the temp file, regardless of whether print succeeded or failed

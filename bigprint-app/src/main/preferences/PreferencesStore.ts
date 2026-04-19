@@ -1,8 +1,9 @@
-import { app } from 'electron'
 import path from 'path'
 import fs from 'fs/promises'
+import { app } from 'electron'
 import type { AppPreferences } from '../../shared/ipc-types'
 import { validateAppPreferences } from '../../shared/ipc-types'
+import { log } from '../../shared/log'
 
 function getFilePath(): string {
   return path.join(app.getPath('userData'), 'preferences.json')
@@ -74,7 +75,7 @@ export const PreferencesStore = {
   async save(prefs: AppPreferences): Promise<void> {
     const err = validateAppPreferences(prefs)
     if (err) {
-      console.warn('[PreferencesStore] Refusing to save invalid preferences:', err)
+      log.warn('PreferencesStore', 'Refusing to save invalid preferences:', err)
       return
     }
     await atomicWrite(getFilePath(), JSON.stringify(prefs, null, 2))
@@ -87,8 +88,8 @@ async function preserveCorrupt(target: string, reason: string): Promise<void> {
     // Rename (not copy) so next load() doesn't rediscover the same corrupt
     // file and produce an unbounded series of .corrupt-<ts> backups.
     await fs.rename(target, backup)
-    console.warn(`[PreferencesStore] Preferences unreadable (${reason}); moved to ${backup}`)
+    log.warn('PreferencesStore', `Preferences unreadable (${reason}); moved to ${backup}`)
   } catch (err) {
-    console.warn('[PreferencesStore] Failed to preserve corrupt preferences file:', err)
+    log.warn('PreferencesStore', 'Failed to preserve corrupt preferences file:', err)
   }
 }

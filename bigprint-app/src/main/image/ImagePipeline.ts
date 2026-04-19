@@ -1,9 +1,10 @@
-import sharp from 'sharp'
 import path from 'path'
 import fs from 'fs'
+import sharp from 'sharp'
 import { PDFDocument } from 'pdf-lib'
 import type { ImageMetaResult } from '../../shared/ipc-types'
-import { MAX_PREVIEW_SIZE_PX, MAX_SOURCE_IMAGE_PX } from '../../shared/constants'
+import { MAX_PREVIEW_SIZE_PX, MAX_SOURCE_IMAGE_PX, PDF_PREVIEW_DENSITY } from '../../shared/constants'
+import { log } from '../../shared/log'
 
 // ── PDF metadata ──────────────────────────────────────────────────────────────
 async function getPDFMeta(filePath: string): Promise<ImageMetaResult> {
@@ -112,8 +113,9 @@ export async function getImageMeta(filePath: string): Promise<ImageMetaResult> {
     // Reject sources so large that downstream Sharp operations would exhaust
     // memory. MAX_SOURCE_IMAGE_PX applies to each dimension independently.
     if (w > MAX_SOURCE_IMAGE_PX || h > MAX_SOURCE_IMAGE_PX) {
-      console.warn(
-        `[ImagePipeline] Image exceeds ${MAX_SOURCE_IMAGE_PX}px on an axis (${w}×${h}); refusing to load`
+      log.warn(
+        'ImagePipeline',
+        `Image exceeds ${MAX_SOURCE_IMAGE_PX}px on an axis (${w}×${h}); refusing to load`
       )
       return {
         widthPx: 0,
@@ -135,7 +137,7 @@ export async function getImageMeta(filePath: string): Promise<ImageMetaResult> {
   } catch (err) {
     // Unknown / unsupported format — return zeroed metadata so the UI can
     // show a meaningful error rather than a silent crash.
-    console.warn(`[ImagePipeline] getImageMeta failed for "${filePath}":`, err)
+    log.warn('ImagePipeline', `getImageMeta failed for "${filePath}":`, err)
     return {
       widthPx: 0,
       heightPx: 0,
@@ -156,7 +158,7 @@ export async function getPreviewDataUrl(
   if (ext === '.pdf') {
     // Rasterise first page via Sharp (needs poppler).  Returns '' if unavailable.
     try {
-      const buf = await sharp(filePath, { page: 0, density: 150 }).png().toBuffer()
+      const buf = await sharp(filePath, { page: 0, density: PDF_PREVIEW_DENSITY }).png().toBuffer()
       return `data:image/png;base64,${buf.toString('base64')}`
     } catch {
       return ''
@@ -178,7 +180,7 @@ export async function getPreviewDataUrl(
 
     return `data:image/png;base64,${buffer.toString('base64')}`
   } catch (err) {
-    console.warn(`[ImagePipeline] getPreviewDataUrl failed for "${filePath}":`, err)
+    log.warn('ImagePipeline', `getPreviewDataUrl failed for "${filePath}":`, err)
     return ''
   }
 }

@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useAppStore } from '../store/appStore'
-import { NumericInput } from './NumericInput'
 import { PAPER_SIZES } from '../../shared/constants'
+import { NumericInput } from './NumericInput'
 
 type OverlapUnit = 'mm' | 'cm' | 'in'
 

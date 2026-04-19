@@ -93,6 +93,25 @@ describe('exportToPDF', () => {
     expect(res.errorMessage).toMatch(/no pages/i)
   })
 
+  it('centerImage=true produces the same page count as centerImage=false (regression)', async () => {
+    // The center-image offset shifts image content rightward/downward within
+    // the assembled grid, but must NOT change the number of tiles produced —
+    // the grid dimensions are determined by image × printer scale, not by
+    // where the image sits on the grid.
+    const outPathA = path.join(tmpRoot, 'noncenter.pdf')
+    const outPathB = path.join(tmpRoot, 'centered.pdf')
+    const baseParams = paramsFor(outPathA, { tiling: { ...paramsFor(outPathA).tiling, skipBlankPages: false } })
+    const noCenter = await exportToPDF(baseParams)
+    const centered = await exportToPDF({
+      ...baseParams,
+      outputPath: outPathB,
+      tiling: { ...baseParams.tiling, centerImage: true },
+    })
+    expect(noCenter.success).toBe(true)
+    expect(centered.success).toBe(true)
+    expect(centered.pagesWritten).toBe(noCenter.pagesWritten)
+  })
+
   it('skipBlankPages=true drops every tile that does not contain image pixels', async () => {
     // Switch to a tiny 200×200 source so only tile [0,0] contains image data.
     // At Letter portrait / 96 DPI the 4×2 grid has 8 total tiles; only the

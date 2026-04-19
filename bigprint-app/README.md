@@ -86,6 +86,14 @@ BigPrint **does not auto-update**. New releases require a manual reinstall from
 the release page. If auto-update is needed for your deployment, wire
 `electron-updater` with a `publish` provider in `electron-builder` config.
 
+## PDF rendering
+
+PDFs are rasterised via PDF.js on all platforms. On Linux/macOS where Sharp's
+libvips includes poppler, the main process can also rasterise directly via
+Sharp as a fast path — but the PDF.js renderer-side path is always the
+authoritative fallback (`src/renderer/utils/pdfRasterize.ts` +
+`src/renderer/hooks/usePDFPreview.ts`). Windows users need no extra setup.
+
 ## Features
 
 - Open images (JPEG, PNG, TIFF, BMP, GIF, WebP, AVIF, SVG) and PDF files

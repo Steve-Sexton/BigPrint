@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useAppStore } from '../store/appStore'
-import { NumericInput } from './NumericInput'
 import { bridge } from '../ipc/bridge'
+import { NumericInput } from './NumericInput'
 
 // ── Grid spacing unit helpers (mirrors TilingSettings pattern) ────────────────
 type SpacingUnit = 'mm' | 'cm' | 'in'

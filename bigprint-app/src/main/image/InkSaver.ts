@@ -1,5 +1,6 @@
 import sharp from 'sharp'
 import type { InkSaverSettings } from '../../shared/ipc-types'
+import { JPEG_TILE_QUALITY } from '../../shared/constants'
 
 export interface InkSaverInput {
   inputBuffer: Buffer
@@ -20,7 +21,7 @@ function detectOutputFormat(buf: Buffer): 'jpeg' | 'png' {
 }
 
 function encodeOutput(pipeline: sharp.Sharp, format: 'jpeg' | 'png'): sharp.Sharp {
-  return format === 'jpeg' ? pipeline.jpeg({ quality: 95 }) : pipeline.png()
+  return format === 'jpeg' ? pipeline.jpeg({ quality: JPEG_TILE_QUALITY }) : pipeline.png()
 }
 
 export async function applyInkSaver(input: InkSaverInput): Promise<Buffer> {

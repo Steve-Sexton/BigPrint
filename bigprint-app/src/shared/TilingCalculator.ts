@@ -7,7 +7,6 @@ export type TileRect = {
   srcH: number
   row: number
   col: number
-  isBlank: boolean
 }
 
 export type TileGridResult = {
@@ -93,9 +92,7 @@ export function computeTileGrid(params: TilingCalcParams): TileGridResult {
       const srcW = Math.round((widthMm / printerScaleX) * pxPerMm)
       const srcH = Math.round((heightMm / printerScaleY) * pxPerMm)
 
-      const isBlank = srcX >= imageWidthPx || srcY >= imageHeightPx
-
-      tileRow.push({ srcX, srcY, srcW, srcH, row, col, isBlank })
+      tileRow.push({ srcX, srcY, srcW, srcH, row, col })
     }
     tiles.push(tileRow)
   }
