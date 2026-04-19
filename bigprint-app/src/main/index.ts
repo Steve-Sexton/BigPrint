@@ -1,7 +1,8 @@
-import { app, BrowserWindow, nativeTheme, session, shell } from 'electron'
 import path from 'path'
+import { app, BrowserWindow, nativeTheme, session, shell } from 'electron'
+import { log } from '../shared/log'
 import { registerAllHandlers, setActiveWindow } from './ipc/handlers'
-import { isSafeExternalUrl, isSameOrigin } from './security'
+import { isSafeExternalUrl, isSameOrigin, canOpenExternalNow } from './security'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -41,12 +42,17 @@ async function createWindow(): Promise<void> {
 
   // Open external links in browser — scheme allowlist prevents file://, javascript:,
   // or custom-protocol abuse from a malicious SVG/PDF or renderer compromise.
+  // Rate-limited so a compromised renderer cannot spam the default browser.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (isSafeExternalUrl(url)) {
-      shell.openExternal(url).catch(() => {})
-    } else {
-      console.warn('[main] Blocked window-open for unsafe URL:', url)
+    if (!isSafeExternalUrl(url)) {
+      log.warn('main', 'Blocked window-open for unsafe URL:', url)
+      return { action: 'deny' }
     }
+    if (!canOpenExternalNow()) {
+      log.warn('main', 'shell.openExternal rate limit exceeded; dropping:', url)
+      return { action: 'deny' }
+    }
+    shell.openExternal(url).catch(err => log.warn('main', 'shell.openExternal failed:', err))
     return { action: 'deny' }
   })
 
@@ -106,7 +112,7 @@ app
     return createWindow()
   })
   .catch(err => {
-    console.error('[main] Fatal error during startup:', err)
+    log.error('main', 'Fatal error during startup:', err)
     app.exit(1)
   })
 
@@ -116,6 +122,6 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow().catch(err => console.error('[main] activate createWindow failed:', err))
+    createWindow().catch(err => log.error('main', 'activate createWindow failed:', err))
   }
 })

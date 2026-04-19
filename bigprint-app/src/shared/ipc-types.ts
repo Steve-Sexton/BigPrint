@@ -129,7 +129,15 @@ export interface SaveProjectParams {
 // ── Persisted user preferences ────────────────────────────────────────────────
 // Saved to userData/preferences.json between sessions.
 // Does NOT include per-image state (dpi, outputScale, crop, selectedPages).
-// printerScaleX/Y are persisted here as the globally "last used" values.
+//
+// Note on printerScaleX/Y: these live in TWO places at runtime.
+//   1. AppPreferences (here) — the persisted "last used" baseline, reloaded on
+//      app start and written back on debounced save.
+//   2. AppState.scale.printerScaleX/Y (per-image) — edited in the UI; may be
+//      temporarily swapped by an orientation flip (see TilingSettings.tsx) and
+//      only written back to preferences at app-wide debounce time, not on
+//      every edit. A per-image experiment therefore does not pollute the
+//      persisted default until the user settles.
 export interface AppPreferences {
   tiling: TilingSettings
   grid: GridSettings
@@ -231,8 +239,20 @@ export function validateGrid(v: unknown): string | null {
 export function validateInkSaver(v: unknown): string | null {
   if (!isObject(v)) return 'inkSaver must be an object'
   if (typeof v['enabled'] !== 'boolean') return 'Invalid inkSaver.enabled'
+  // Bounds mirror the UI sliders in InkSaverSettings.tsx so a malicious or
+  // corrupt project / preference file cannot push extreme values into Sharp
+  // (which rejects/NaNs them) or produce non-printable output.
+  const bounds = {
+    brightness: [10, 200],
+    gamma: [1, 3],
+    edgeFadeStrength: [0, 100],
+    edgeFadeRadiusMm: [0.5, 20],
+  } as const
   for (const nk of ['brightness', 'gamma', 'edgeFadeStrength', 'edgeFadeRadiusMm'] as const) {
-    if (!isNumber(v[nk])) return `Invalid inkSaver.${nk}`
+    const n = v[nk]
+    if (!isNumber(n)) return `Invalid inkSaver.${nk}`
+    const [lo, hi] = bounds[nk]
+    if (n < lo || n > hi) return `Invalid inkSaver.${nk} (${n}) — must be in [${lo}, ${hi}]`
   }
   return null
 }
@@ -255,6 +275,21 @@ export function validateAppPreferences(data: unknown): string | null {
     return 'Invalid printerScaleX'
   if (!isNumber(data['printerScaleY']) || (data['printerScaleY'] as number) <= 0)
     return 'Invalid printerScaleY'
+  return null
+}
+
+export function validateFileFilters(v: unknown): string | null {
+  if (!Array.isArray(v)) return 'filters must be an array'
+  for (let i = 0; i < v.length; i++) {
+    const f = v[i]
+    if (!isObject(f)) return `filters[${i}] must be an object`
+    if (typeof f['name'] !== 'string' || !f['name']) return `filters[${i}].name must be a non-empty string`
+    if (!Array.isArray(f['extensions'])) return `filters[${i}].extensions must be an array`
+    for (let j = 0; j < (f['extensions'] as unknown[]).length; j++) {
+      const ext = (f['extensions'] as unknown[])[j]
+      if (typeof ext !== 'string') return `filters[${i}].extensions[${j}] must be a string`
+    }
+  }
   return null
 }
 

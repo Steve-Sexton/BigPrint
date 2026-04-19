@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import { bridge } from '../ipc/bridge'
+import { PDFJS_PREVIEW_SCALE } from '../../shared/constants'
+import { log } from '../../shared/log'
 
 // Configure PDF.js worker once at module load.
 // Vite's static new URL() analysis will bundle this file as an asset,
@@ -61,9 +63,10 @@ export function usePDFPreview(filePath: string | null, pageIndex = 0): string | 
         const pageNumber = Math.max(1, Math.min(pageIndex + 1, pdf.numPages))
         const page = await pdf.getPage(pageNumber)
 
-        // 1.5× gives ~150 dpi for a standard US Letter page (612 × 792 pts)
-        // → canvas is ~918 × 1188 px, a good balance of quality vs. memory
-        const viewport = page.getViewport({ scale: 1.5 })
+        // PDFJS_PREVIEW_SCALE (1.5×) gives ~150 dpi for a standard US Letter
+        // page (612 × 792 pts) → canvas is ~918 × 1188 px, balancing quality
+        // vs. memory. Tune in shared/constants.ts.
+        const viewport = page.getViewport({ scale: PDFJS_PREVIEW_SCALE })
 
         const canvas = document.createElement('canvas')
         canvas.width = Math.round(viewport.width)
@@ -71,7 +74,7 @@ export function usePDFPreview(filePath: string | null, pageIndex = 0): string | 
 
         const ctx = canvas.getContext('2d')
         if (!ctx) {
-          console.warn('[usePDFPreview] Could not get 2D canvas context')
+          log.warn('usePDFPreview', 'Could not get 2D canvas context')
           return
         }
 
@@ -85,7 +88,7 @@ export function usePDFPreview(filePath: string | null, pageIndex = 0): string | 
         page.cleanup()
         await pdf.destroy()
       } catch (err) {
-        console.warn('[usePDFPreview] PDF.js render failed:', err)
+        log.warn('usePDFPreview', 'PDF.js render failed:', err)
         if (!cancelled) setDataUrl(null)
       }
     }

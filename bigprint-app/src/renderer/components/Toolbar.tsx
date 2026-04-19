@@ -2,7 +2,7 @@ import React, { useCallback } from 'react'
 import { useAppStore } from '../store/appStore'
 import { bridge } from '../ipc/bridge'
 import { rasterizePDFPage } from '../utils/pdfRasterize'
-import { MAX_PREVIEW_SIZE_PX } from '../../shared/constants'
+import { MAX_PREVIEW_SIZE_PX, MIN_PRINT_DPI } from '../../shared/constants'
 
 export function Toolbar() {
   const store = useAppStore()
@@ -46,8 +46,12 @@ export function Toolbar() {
       // honest DPI; PDFs don't (the source is in points — the "DPI" the user
       // cares about is their chosen render density, not a file property), so
       // we leave PDFs to inherit the user's current scale.dpi instead.
+      // Reset outputScale to 1.0 on new image: a prior calibration may have
+      // rebased outputScale to preserve physical size under a different DPI,
+      // and carrying that factor into a fresh file produces incorrect page
+      // counts and printed dimensions.
       if (meta.dpiX && meta.dpiX > 10 && meta.format !== 'pdf') {
-        store.setScale({ dpi: meta.dpiX })
+        store.setScale({ dpi: meta.dpiX, outputScale: 1.0 })
       }
     } catch (err) {
       alert(`Failed to load image: ${err}`)
@@ -70,7 +74,7 @@ export function Toolbar() {
       let sourceBuffer: ArrayBuffer | undefined
       let exportScale = scale
       if (source.mimeType === 'application/pdf') {
-        const renderDpi = Math.max(scale.dpi, 300)
+        const renderDpi = Math.max(scale.dpi, MIN_PRINT_DPI)
         store.setLoading(true, 'Rasterising PDF page…')
         sourceBuffer = await rasterizePDFPage(source.filePath, source.pdfPageIndex ?? 0, renderDpi)
         store.setLoading(true, 'Generating PDF…')
@@ -112,7 +116,7 @@ export function Toolbar() {
       let sourceBuffer: ArrayBuffer | undefined
       let printScale = scale
       if (source.mimeType === 'application/pdf') {
-        const renderDpi = Math.max(scale.dpi, 300)
+        const renderDpi = Math.max(scale.dpi, MIN_PRINT_DPI)
         store.setLoading(true, 'Rasterising PDF page…')
         sourceBuffer = await rasterizePDFPage(source.filePath, source.pdfPageIndex ?? 0, renderDpi)
         store.setLoading(true, 'Sending to printer…')

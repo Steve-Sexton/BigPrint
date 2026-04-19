@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useRef } from 'react'
+import { MAX_PREVIEW_SIZE_PX } from '../shared/constants'
+import { log } from '../shared/log'
+import type { AppPreferences } from '../shared/ipc-types'
 import { Toolbar } from './components/Toolbar'
 import { PreviewCanvas } from './components/PreviewCanvas'
 import { SettingsPanel } from './components/SettingsPanel'
 import { CalibrationDialog } from './components/CalibrationDialog'
 import { useAppStore } from './store/appStore'
 import { bridge } from './ipc/bridge'
-import { MAX_PREVIEW_SIZE_PX } from '../shared/constants'
-import type { AppPreferences } from '../shared/ipc-types'
 
 export function App() {
   // Stable selectors only — do NOT `const store = useAppStore()` here, which
@@ -20,7 +21,6 @@ export function App() {
   const inkSaverPreset = useAppStore(s => s.inkSaverPreset)
   const printerScaleX = useAppStore(s => s.scale.printerScaleX)
   const printerScaleY = useAppStore(s => s.scale.printerScaleY)
-  const isDraggingOver = useRef(false)
   // Prevents the debounced save effect from firing during the initial hydration
   // pass (load prefs → set store → save effect would rewrite the file with the
   // same content). Flipped to true after load completes (success or not).
@@ -35,20 +35,42 @@ export function App() {
   }, [])
 
   // ── Load persisted preferences on startup ─────────────────────────────────
+  // Snapshot each settings slice by reference at mount. When the async load
+  // resolves we only apply the disk value for a slice if its current store
+  // reference is still the initial one — i.e. the user hasn't edited it while
+  // the IPC round-trip was in flight. Immer produces a fresh reference on every
+  // setter, so ref equality is a reliable "untouched" signal.
   useEffect(() => {
+    const initial = useAppStore.getState()
+    const snap = {
+      tiling: initial.tiling,
+      grid: initial.grid,
+      inkSaver: initial.inkSaver,
+      inkSaverPreset: initial.inkSaverPreset,
+      printerScaleX: initial.scale.printerScaleX,
+      printerScaleY: initial.scale.printerScaleY,
+    }
     const { setTiling, setGrid, setInkSaver, setScale, setInkSaverPreset } = useAppStore.getState()
     bridge
       .loadPreferences()
       .then(prefs => {
         if (!prefs) return // first launch — use DEFAULT_STATE as-is
-        setTiling(prefs.tiling)
-        setGrid(prefs.grid)
-        setInkSaver(prefs.inkSaver)
-        setScale({ printerScaleX: prefs.printerScaleX, printerScaleY: prefs.printerScaleY })
+        const current = useAppStore.getState()
+        if (current.tiling === snap.tiling) setTiling(prefs.tiling)
+        if (current.grid === snap.grid) setGrid(prefs.grid)
+        if (current.inkSaver === snap.inkSaver) setInkSaver(prefs.inkSaver)
+        if (
+          current.scale.printerScaleX === snap.printerScaleX &&
+          current.scale.printerScaleY === snap.printerScaleY
+        ) {
+          setScale({ printerScaleX: prefs.printerScaleX, printerScaleY: prefs.printerScaleY })
+        }
         // Apply preset last so preset values aren't overwritten by the above
-        if (prefs.inkSaverPreset) setInkSaverPreset(prefs.inkSaverPreset)
+        if (prefs.inkSaverPreset && current.inkSaverPreset === snap.inkSaverPreset) {
+          setInkSaverPreset(prefs.inkSaverPreset)
+        }
       })
-      .catch(err => console.warn('[App] loadPreferences failed:', err))
+      .catch(err => log.warn('App', 'loadPreferences failed:', err))
       .finally(() => {
         hydrated.current = true
       })
@@ -70,7 +92,7 @@ export function App() {
         printerScaleY,
       }
       bridge.savePreferences(prefs).catch(err => {
-        console.warn('[App] savePreferences failed:', err)
+        log.warn('App', 'savePreferences failed:', err)
         // Only alert once per session so repeated debounced saves don't spam
         // the user — subsequent failures still log.
         if (!savePrefsAlertShownRef.current) {
@@ -89,24 +111,16 @@ export function App() {
   }, [tiling, grid, inkSaver, inkSaverPreset, printerScaleX, printerScaleY])
 
   // ── Drag-and-drop ─────────────────────────────────────────────────────────
+  // preventDefault on dragover + drop is required so Chromium doesn't navigate
+  // the window to the dropped file's URL instead of delivering the File object.
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    if (!isDraggingOver.current) {
-      isDraggingOver.current = true
-    }
-  }, [])
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    isDraggingOver.current = false
   }, [])
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    isDraggingOver.current = false
 
     const file = e.dataTransfer.files[0]
     if (!file) return
@@ -154,8 +168,9 @@ export function App() {
 
       // Auto-detect DPI — raster formats only. PDFs carry no intrinsic DPI
       // (they're in points); leave their DPI to the user's current setting.
+      // Also reset outputScale — prior calibration may have rebased it.
       if (meta.dpiX && meta.dpiX > 10 && meta.format !== 'pdf') {
-        setScale({ dpi: meta.dpiX })
+        setScale({ dpi: meta.dpiX, outputScale: 1.0 })
       }
     } catch (err) {
       alert(`Failed to load dropped file: ${err}`)
@@ -188,7 +203,18 @@ export function App() {
           blob.arrayBuffer(),
           new Promise<string>((resolve, reject) => {
             const reader = new FileReader()
-            reader.onload = () => resolve(reader.result as string)
+            reader.onload = () => {
+              // readAsDataURL always produces a string on success, but the
+              // result type is `string | ArrayBuffer | null`; narrow before
+              // resolving so a malformed or partial read cannot be silently
+              // promoted to a bogus data URL downstream.
+              const r = reader.result
+              if (typeof r !== 'string') {
+                reject(new Error('FileReader produced non-string result'))
+                return
+              }
+              resolve(r)
+            }
             reader.onerror = () => reject(new Error('FileReader failed'))
             reader.readAsDataURL(blob)
           }),
@@ -228,7 +254,6 @@ export function App() {
     <div
       className="h-screen flex flex-col bg-gray-100 dark:bg-gray-900 overflow-hidden"
       onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       {/* Top toolbar */}

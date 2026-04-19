@@ -297,8 +297,8 @@ function renderPageLabel(params: GridRenderParams): void {
   const label = getLabelForTile(row, col, totalRows, totalCols, grid.labelStyle)
   const marginPt = 3 * MM_TO_PT
 
-  // pdf-lib silently drops drawText when no font is embedded in the document.
-  // labelFont is required so text renders reliably across all PDF viewers.
+  // labelFont is an explicit parameter so callers share one embedded font
+  // across all drawText calls in an export (performance + smaller output PDF).
   page.drawText(label, {
     x: marginPt,
     y: marginPt,

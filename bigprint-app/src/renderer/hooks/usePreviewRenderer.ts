@@ -1,15 +1,66 @@
 import { useEffect } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '../store/appStore'
 import type { AppState } from '../store/types'
 import { computeTileGrid } from '../../shared/TilingCalculator'
 import { getPaperSize } from '../../shared/constants'
+
+// The exact subset of AppState that drawPreview reads. Kept as a named type so
+// the selector below and the drawPreview parameter stay in sync.
+type PreviewSlice = Pick<
+  AppState,
+  | 'source'
+  | 'zoom'
+  | 'panX'
+  | 'panY'
+  | 'tiling'
+  | 'scale'
+  | 'grid'
+  | 'calibrationPoint1'
+  | 'calibrationPoint2'
+  | 'calibrationMode'
+  | 'crop'
+  | 'cropAnchor'
+  | 'cropCurrent'
+  | 'measurePoint1'
+  | 'measurePoint2'
+  | 'measureMode'
+  | 'selectedPages'
+  | 'isDarkMode'
+>
 
 export function usePreviewRenderer(
   canvasRef: React.RefObject<HTMLCanvasElement>,
   previewImg: HTMLImageElement | null,
   resizeTick = 0
 ) {
-  const state = useAppStore()
+  // Shallow-selected slice so unrelated store updates (isLoading, showCalibrationDialog,
+  // etc.) do not re-render the host component. useShallow returns a stable reference
+  // when each selected field shallow-equals the previous.
+  const state = useAppStore(
+    useShallow(
+      (s): PreviewSlice => ({
+        source: s.source,
+        zoom: s.zoom,
+        panX: s.panX,
+        panY: s.panY,
+        tiling: s.tiling,
+        scale: s.scale,
+        grid: s.grid,
+        calibrationPoint1: s.calibrationPoint1,
+        calibrationPoint2: s.calibrationPoint2,
+        calibrationMode: s.calibrationMode,
+        crop: s.crop,
+        cropAnchor: s.cropAnchor,
+        cropCurrent: s.cropCurrent,
+        measurePoint1: s.measurePoint1,
+        measurePoint2: s.measurePoint2,
+        measureMode: s.measureMode,
+        selectedPages: s.selectedPages,
+        isDarkMode: s.isDarkMode,
+      })
+    )
+  )
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -22,6 +73,10 @@ export function usePreviewRenderer(
     const rect = canvas.getBoundingClientRect()
     canvas.width = rect.width * dpr
     canvas.height = rect.height * dpr
+    // Explicit identity reset before scale. Assigning canvas.width already
+    // clears context state, but being explicit guards against a future change
+    // that skips the size assignment (e.g. bailing out when dimensions match).
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.scale(dpr, dpr)
 
     drawPreview(ctx, rect.width, rect.height, previewImg, state)
@@ -53,7 +108,7 @@ function drawPreview(
   canvasW: number,
   canvasH: number,
   img: HTMLImageElement,
-  state: AppState
+  state: PreviewSlice
 ) {
   ctx.clearRect(0, 0, canvasW, canvasH)
 

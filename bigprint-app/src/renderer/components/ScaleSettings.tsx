@@ -1,9 +1,9 @@
 import React, { useState } from 'react'
 import { useAppStore } from '../store/appStore'
-import { NumericInput } from './NumericInput'
 import { useCalibration } from '../hooks/useCalibration'
 import { computeTileGrid } from '../../shared/TilingCalculator'
 import { bridge } from '../ipc/bridge'
+import { NumericInput } from './NumericInput'
 
 // Fixed grid settings used for the calibration page — always 10 mm squares,
 // never diagonals, so measurement with a ruler is straightforward.

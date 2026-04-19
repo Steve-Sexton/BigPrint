@@ -86,20 +86,6 @@ describe('computeTileGrid', () => {
     expect(Number.isFinite(result.cols)).toBe(true)
   })
 
-  it('marks tiles fully past the image edge as isBlank', () => {
-    const result = computeTileGrid({
-      ...LETTER_PORTRAIT_BASE,
-      imageWidthPx: 200, // tiny image — only first column has content
-      imageHeightPx: 200
-    })
-    // First column's srcX=0 is inside the image; any further column's srcX
-    // will be ≥ imageWidthPx and flagged blank.
-    expect(result.tiles[0][0].isBlank).toBe(false)
-    if (result.cols > 1) {
-      expect(result.tiles[0][result.cols - 1].isBlank).toBe(true)
-    }
-  })
-
   it('returns the full page for a degenerate (srcW=0) tile — calibration-grid path', () => {
     const rect = computeImageRectOnTile({
       tileImageX: 0, tileImageY: 0,

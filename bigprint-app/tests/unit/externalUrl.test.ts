@@ -7,8 +7,8 @@ describe('isSafeExternalUrl', () => {
     expect(isSafeExternalUrl('https://example.com/path')).toBe(true)
   })
 
-  it('allows mailto:', () => {
-    expect(isSafeExternalUrl('mailto:user@example.com')).toBe(true)
+  it('blocks mailto: (can be abused to exfiltrate data via default mail client)', () => {
+    expect(isSafeExternalUrl('mailto:user@example.com')).toBe(false)
   })
 
   it('blocks file://', () => {
@@ -41,6 +41,21 @@ describe('isSameOrigin', () => {
   it('rejects cross-origin navigation', () => {
     expect(isSameOrigin('https://evil.example/', 'file:///app/index.html')).toBe(false)
     expect(isSameOrigin('http://localhost:5174/', 'http://localhost:5173/')).toBe(false)
+  })
+
+  it('rejects cross-path file:// URLs (regression for file-origin collapse)', () => {
+    // new URL('file:///*').origin is literally 'null', so raw origin comparison
+    // treats every file:// URL as same-origin. isSameOrigin must compare paths
+    // for the file: scheme so a compromised renderer cannot navigate to an
+    // arbitrary local file (e.g. file:///etc/passwd).
+    expect(isSameOrigin('file:///etc/passwd', 'file:///app/renderer/index.html')).toBe(false)
+    expect(isSameOrigin('file:///C:/Windows/System32/hosts', 'file:///app/renderer/index.html')).toBe(
+      false
+    )
+    // Same file, differing fragments / trailing slashes — still allowed.
+    expect(isSameOrigin('file:///app/renderer/index.html#a', 'file:///app/renderer/index.html')).toBe(
+      true
+    )
   })
 
   it('returns false for malformed URLs rather than throwing', () => {

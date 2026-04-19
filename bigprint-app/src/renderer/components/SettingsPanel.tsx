@@ -1,11 +1,11 @@
 import React, { useState } from 'react'
+import { useAppStore } from '../store/appStore'
+import { computeTileGrid } from '../../shared/TilingCalculator'
 import { ScaleSettings } from './ScaleSettings'
 import { TilingSettings } from './TilingSettings'
 import { GridSettings } from './GridSettings'
 import { InkSaverSettings } from './InkSaverSettings'
 import { PageSelector } from './PageSelector'
-import { useAppStore } from '../store/appStore'
-import { computeTileGrid } from '../../shared/TilingCalculator'
 
 type Section = 'scale' | 'tiling' | 'grid' | 'inkSaver' | 'pages'
 
